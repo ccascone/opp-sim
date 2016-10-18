@@ -48,9 +48,8 @@ def on_curl_exit_func(fname, return_code):
 
         elif return_code == 0:
             # Start download of next one.
-            if __name__ == '__main__':
-                if len(files) > 0:
-                    start_download(files[0], on_curl_exit_func)
+            if len(files) > 0:
+                start_download(files[0], on_curl_exit_func)
             # Trigger parsing.
             trigger_parsing(fname)
 
@@ -103,6 +102,7 @@ def trigger_parsing(fname):
 
     if was_downloaded(other_fname) and was_downloaded(fname):
         # Trigger parsing
+        print "Starting parsing of {direction}-{day}-{ts}".format(**locals)
         curr_dir = os.path.dirname(os.path.realpath(__file__))
         if not curr_dir.endswith(trace_dir):
             os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/' + trace_dir)
@@ -129,10 +129,16 @@ if __name__ == '__main__':
     for (k, v) in (l.split() for l in (l.strip() for l in read_md5_lines())):
         md5s[k] = v
 
+    curr_dir = os.path.dirname(os.path.realpath(__file__))
+
     for d in directions:
         for t in timestamps:
             for e in extensions:
-                files.append(trace_fname(direction=d, day=trace_day, time=t, extension=e))
+                parsed_fname = trace_fname(direction=d, day=trace_day, time=t, extension='parsed')
+                if not os.path.isfile(curr_dir + '/' + trace_dir + '/' + parsed_fname):
+                    files.append(trace_fname(direction=d, day=trace_day, time=t, extension=e))
+                else:
+                    print "{d}-{trace_day}-{t} already parsed, skipping...".format(**locals())
 
     print "Starting download of %d files, with max %d in parallel..." % (len(files), max_parallel_download)
 

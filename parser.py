@@ -27,7 +27,7 @@ def parse_packets_and_times(day, ts, direct):
     lines = []
     i = 0
 
-    print "Starting parsing of %s..." % label
+    # print "Starting parsing of %s..." % label
 
     curr_dir = os.path.dirname(os.path.realpath(__file__))
     if not curr_dir.endswith(trace_dir):
