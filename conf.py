@@ -1,3 +1,8 @@
+import hashlib
+
+import os
+from os.path import isfile
+
 trace_dir = 'caida'
 trace_link = 'equinix-chicago'
 trace_url_prefix = "https://data.caida.org/datasets/passive-2015/equinix-chicago/20150219-130000.UTC/"
@@ -12,6 +17,8 @@ timestamps = [125911, 130000, 130100, 130200, 130300, 130400, 130500, 130600, 13
               135900, 140000, 140100, 140200]
 caida_user = "pontarelli@ing.uniroma2.it"
 caida_passwd = "pont313"
+
+md5s = {}
 
 
 def trace_fname(direction, day, time, extension, link_name=trace_link):
@@ -30,3 +37,29 @@ def parse_trace_fname(fname):
     else:
         ext = ''
     return pieces[1][-1], date[0], date[1], ext
+
+
+# Returns the MD5 hash of the given filename
+def md5(fname):
+    hash_md5 = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
+
+
+def was_downloaded(fname):
+    this_dir = os.path.dirname(os.path.realpath(__file__))
+    file_path = this_dir + '/' + trace_dir + '/' + fname
+    return isfile(file_path) and md5(file_path) == md5s[fname]
+
+
+# Read MD5 (to avoid red-downloading the same file)
+def read_md5_lines():
+    with open(trace_dir + '/' + "md5.md5") as f:
+        return f.readlines()
+
+
+# Read MD5 from file and store in a dict (file_names as key)
+for (k, v) in (l.split() for l in (l.strip() for l in read_md5_lines())):
+    md5s[k] = v
