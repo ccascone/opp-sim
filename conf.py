@@ -1,4 +1,4 @@
-trace_dir = 'traces'
+trace_dir = 'caida'
 trace_link = 'equinix-chicago'
 trace_url_prefix = "https://data.caida.org/datasets/passive-2015/equinix-chicago/20150219-130000.UTC/"
 trace_day = "20150219"

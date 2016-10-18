@@ -72,8 +72,10 @@ def start_curl(fname, on_exit):
         on_exit(fname, 0)
     else:
         print "Starting download of %s..." % fname
-        # Change working dir to trace dire.
-        os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/' + trace_dir)
+        # Change working dir to trace dir.
+        curr_dir = os.path.dirname(os.path.realpath(__file__))
+        if not curr_dir.endswith(trace_dir):
+            os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/' + trace_dir)
         cmd = "curl --user %s:%s -O -s %s%s" % (caida_user, caida_passwd, trace_url_prefix, fname)
         # Starts curl (subprocess.call blocks until it terminates)
         return_code = subprocess.call(cmd.split(), stderr=subprocess.STDOUT)
@@ -101,7 +103,9 @@ def trigger_parsing(fname):
 
     if was_downloaded(other_fname) and was_downloaded(fname):
         # Trigger parsing
-        os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/' + trace_dir)
+        curr_dir = os.path.dirname(os.path.realpath(__file__))
+        if not curr_dir.endswith(trace_dir):
+            os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/' + trace_dir)
         for f in (fname, other_fname):
             retcode = subprocess.call(('gunzip', f), stderr=subprocess.STDOUT)
             assert retcode != 0, "unable to gunzip " + f

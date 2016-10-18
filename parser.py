@@ -29,7 +29,9 @@ def parse_packets_and_times(day, ts, direct):
 
     print "Starting parsing of %s..." % label
 
-    os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/' + trace_dir)
+    curr_dir = os.path.dirname(os.path.realpath(__file__))
+    if not curr_dir.endswith(trace_dir):
+        os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/' + trace_dir)
 
     fpcap = open(base_fname + 'pcap')
     ftimes = open(base_fname + 'times')
