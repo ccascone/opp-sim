@@ -1,5 +1,4 @@
-from Queue import Queue, Empty
-import logging
+from fifo import Queue2 as Queue
 
 DEBUG = False
 
@@ -15,16 +14,17 @@ class Scheduler:
         self.locked_keys = [None] * N
         self.first_priority = 0
         self.last_packet = None
+        # Digests are cached for speed.
+        self.digests = {}
 
-    def accept(self, packet):
+    def accept(self, pkt):
         """
         Accept a new packet to be enqued in one of the flow queues.
-        :param packet: a packet
+        :param pkt: a packet
         :return: True if packet can be accepted, False otherwise (e.g. queues are full)
         """
         # Enqueue ingress packet by its lookup key.
-        digest = self.hash_func(packet.lookup_key) % self.Q
-        self.queues[digest].put(packet)
+        self.queues[self._digest(pkt.lookup_key)].put(pkt)
         # TODO if queues have limited size we could return false
         return True
 
@@ -38,8 +38,8 @@ class Scheduler:
         for q in range(self.Q):
             if self.hols[q] is None:
                 try:
-                    self.hols[q] = self.queues[q].get_nowait()
-                except Empty:
+                    self.hols[q] = self.queues[q].get()
+                except IndexError:
                     pass
 
         # Update round robin priority.
@@ -62,22 +62,29 @@ class Scheduler:
         self._serve(None)
         return False
 
-    def _serve(self, packet):
+    def _serve(self, pkt):
         """
         Serve a packet, push it at the beginning of the processing pipeline.
-        :param packet: a packet or None
+        :param pkt: a packet or None
         :return: None
         """
-        if packet is None:
+        if pkt is None:
             # Insert None at beginning of the list....
             self.locked_keys.insert(0, None)
         else:
             # Insert hash of the update key at the beginning of the list.
-            digest = self.hash_func(packet.update_key) % self.Q
-            self.locked_keys.insert(0, digest)
+            self.locked_keys.insert(0, self._digest(pkt.update_key))
 
         # Remove last key.
         self.locked_keys.pop()
+
+    def _digest(self, key):
+        try:
+            return self.digests[key]
+        except KeyError:
+            digest = self.hash_func(key) % self.Q
+            self.digests[key] = digest
+            return digest
 
     def queue_occupancy(self):
         sizes = [x.qsize() for x in self.queues]

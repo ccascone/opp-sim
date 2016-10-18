@@ -1,0 +1,5 @@
+cffi==1.8.1
+greenlet==0.4.10
+humanize==0.5.1
+PyCRC==1.21
+readline==6.2.4.1
