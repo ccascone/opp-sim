@@ -1,79 +1,100 @@
-import os
 import time
-from struct import pack
+from struct import pack, unpack
 
 import dpkt
-import humanize
+import os
+import progressbar
 from dpkt.tcp import TCP
 from dpkt.udp import UDP
+from progressbar import Bar
+from progressbar import ETA
+from progressbar import FileTransferSpeed
+from progressbar import Percentage
+from conf import *
 
 
-def parse_pcap(inputfile):
-    global log, sched
-    byte_report_count = 0
-    byte_total_count = 0
+def parse_packets_and_times(day, ts, direct):
+    assert direct in ('A', 'B')
+    base_fname = trace_fname(direction=direct, day=day, time=ts, extension='')
+    label = "{direct}-{day}-{ts}".format(**locals())
+    parsed_filename = base_fname + 'parsed'
     pkt_report_count = 0
-    discarded_total_count = 0
-    next_report_pkts = 30000
-    # Get file size in bytes.
-    file_size = os.stat(inputfile).st_size
+    next_report_pkts = 1000
+    start_ts = time.time()
+    byte_total_count = 0
+    discarded_count = 0
+    processed_count = 0
+    lines = []
+    i = 0
 
-    dump = ""
+    print "Starting parsing of %s..." % label
 
-    with open(inputfile) as f:
-        with open(inputfile + ".parsed", 'ab') as dest:
+    os.chdir(os.path.dirname(os.path.realpath(__file__)) + '/' + trace_dir)
 
-            start_ts = time.time()
+    fpcap = open(base_fname + 'pcap')
+    ftimes = open(base_fname + 'times')
 
-            for ts, data in dpkt.pcap.Reader(f):
+    times = ftimes.readlines()
 
-                ether = dpkt.ethernet.Ethernet(data)
-                if ether.type != dpkt.ethernet.ETH_TYPE_IP:
-                    discarded_total_count += 1
-                    continue
+    widgets = [label, Percentage(), ' ', Bar(), ' ', ETA(), ' ', FileTransferSpeed(unit='p')]
+    bar = progressbar.ProgressBar(max_value=len(times), widgets=widgets)
+    bar.start()
+    bar.update(1)
 
-                ip = ether.data
+    try:
+        for _, data in dpkt.pcap.Reader(fpcap):
 
-                src = ip.src
-                dst = ip.dst
+            assert i < len(times)
+            ts_nano = float(times[i].strip())
 
-                if type(ip.data) in (UDP, TCP):  # checking of type of data that was recognized by dpkg
-                    trsp = ip.data
-                    sport = trsp.sport
-                    dport = trsp.dport
-                else:
-                    discarded_total_count += 1
-                    continue
+            i += 1
+            pkt_report_count += 1
+            byte_total_count += len(data)
 
-                line = pack('dI', ts, len(data)) + src + dst + pack('HH', sport, dport)
-                dump += line
+            try:
+                ip = dpkt.ip.IP(data)
+            except dpkt.UnpackError:
+                discarded_count += 1
+                continue
 
-                # Do some reporting.
-                byte_report_count += len(data)
-                pkt_report_count += 1
+            if type(ip.data) in (UDP, TCP):
+                proto = 'U' if type(ip.data) == UDP else 'T'
+                sport = ip.data.sport
+                dport = ip.data.dport
+            else:
+                discarded_count += 1
+                continue
 
-                if pkt_report_count == next_report_pkts:
-                    delta_seconds = time.time() - start_ts
-                    byte_total_count += byte_report_count
-                    pkt_rate = pkt_report_count / delta_seconds
-                    byte_rate = byte_report_count / delta_seconds
-                    remaining_bytes = (file_size - byte_total_count)
-                    eta_seconds = remaining_bytes / byte_rate
+            lines.append(pack('cdH4s4scHH', direct, ts_nano, ip.len, ip.src, ip.dst, proto, sport, dport))
 
-                    print "pkt_rate=%spps, remaining=%sB, eta=%.1fmin" % (
-                        humanize.naturalsize(pkt_rate, gnu=True, format="%.0f"),
-                        humanize.naturalsize(remaining_bytes, gnu=True, format="%.1f"),
-                        eta_seconds / 60.0)
+            processed_count += 1
 
-                    dest.write(dump)
-                    dump = ""
+            if pkt_report_count >= next_report_pkts:
+                # Check if we're packing right
+                pieces = unpack('cdH4s4scHH', lines[-1])
+                assert (direct, ts_nano, ip.len, ip.src, ip.dst, proto, sport, dport) == tuple(pieces)
+                delta_seconds = time.time() - start_ts
+                pkt_rate = pkt_report_count / delta_seconds
+                next_report_pkts = int(pkt_rate) * 0.5
+                pkt_report_count = 0
+                start_ts = time.time()
+                bar.update(i)
 
-                    # get a report approx every 1 seconds.
-                    next_report_pkts = int(pkt_rate) * 1
-                    pkt_report_count = 0
-                    byte_report_count = 0
-                    start_ts = time.time()
+    finally:
+        bar.update(i)
+        fpcap.close()
+        ftimes.close()
+
+    with open(parsed_filename, 'wb') as pfile:
+        pfile.write(''.join(lines))
+
+    msg = "PARSER: completed %s, processed=%dpkts, discarded=%dpkts (%.3f)" % (label,
+                                                                               processed_count,
+                                                                               discarded_count,
+                                                                               discarded_count / float(i))
+    with open('parse_report.txt', 'a') as r:
+        r.write(msg + "\n")
 
 
 if __name__ == "__main__":
-    parse_pcap('caida/equinix-chicago.dirA.10M.1.pcap')
+    parse_packets_and_times(20150219, 125911, 'A')
