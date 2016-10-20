@@ -1,13 +1,19 @@
-class SimPacket():
-    def __init__(self, lookup_key, update_key):
-        """
-        Creates a new packet
-        :param lookup_key: lookup key
-        :param update_key: update key
-        :param size: packet size in bytes
-        """
-        self.lookup_key = lookup_key
-        self.update_key = update_key
+from struct import unpack_from
 
-    def __repr__(self):
-        return self.lookup_key+':'+self.update_key
+
+class SimPacket():
+    def __init__(self, packed_buffer, offset=0):
+        self.direct, self.ts_nano, self.iplen = unpack_from('cdH', packed_buffer, offset=offset)
+        self.packed_buffer = packed_buffer
+        self.offset = offset
+        self.lkp_key = None
+        self.upd_key = None
+
+    def lookup_key(self):
+        return self.lkp_key
+
+    def update_key(self):
+        return self.lkp_key
+
+    def ip_src(self):
+        return self.packed_buffer[self.offset + 18:self.offset + 22]

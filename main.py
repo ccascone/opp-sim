@@ -1,127 +1,152 @@
 import time
-from struct import unpack
+from collections import deque
 
-import progressbar
-from PyCRC import CRC16, CRC32
-from progressbar import Bar
-from progressbar import ETA
-from progressbar import FileTransferSpeed
-from progressbar import Percentage
-from progressbar import RotatingMarker
+from humanize import naturalsize as ns
 
+import conf
 from scheduler import Scheduler
 from simpacket import SimPacket
 
-file = 'caida/equinix-chicago.dirA.10M.1.pcap.parsed'
 
-crc16c = CRC16.CRC16()
-crc32c = CRC32.CRC32()
+class Simulator:
+    def __init__(self, trace_day, trace_ts, clock_rate, N, Q, hash_func=None, key_extract_func=None):
+        self.trace_day = trace_day
+        self.trace_ts = trace_ts
+        self.clock_rate = clock_rate
+        self.N = N
+        self.Q = Q
+        self.hash_func = hash_func
+        self.key_extract_func = key_extract_func
+        self.running = True
+        self.samples = dict(thrpt=[], queues_sum=[], queues_max=[])
 
+    def start(self):
+        try:
+            self.do_simulation()
+            print "Simulation completed."
+        except KeyboardInterrupt:
+            print "Simulation interrupted. Results won't be saved to disk."
+            pass
+        self.running = False
+        if 'thrpt' in self.samples:
+            print "Collected %d samples" % len(self.samples["thrpt"])
 
-def crc16(input):
-    return crc16c.calculate(input)
+    def do_simulation(self):
 
+        fname_a = conf.trace_dir + '/' + conf.trace_fname('A', self.trace_day, self.trace_ts, 'parsed')
+        fname_b = conf.trace_dir + '/' + conf.trace_fname('B', self.trace_day, self.trace_ts, 'parsed')
 
-def crc32(input):
-    return crc32c.calculate(input)
+        print 'Reading %s...' % fname_a
+        dump_a = open(fname_a, 'rb').read()
+        print 'Reading %s...' % fname_b
+        dump_b = open(fname_b, 'rb').read()
 
+        tot_pkt_a, rem_a = divmod(len(dump_a), 32.0)
+        tot_pkt_b, rem_b = divmod(len(dump_b), 32.0)
+        assert (rem_a + rem_b) == 0, "invalid byte count in file A or B (file size must be multiple of 32 bytes)"
 
-N = 8
-Q = 24
-hash_func = crc16
+        tot_pkts = tot_pkt_a + tot_pkt_b
 
-sched = Scheduler(Q, N, hash_func)
+        idx_a = 0
+        idx_b = 0
+        pkt_a = None
+        pkt_b = None
 
+        # Variables needed for reporting.
+        pkt_count = 0
+        report_pkt_count = 0
+        report_served_count = 0
+        served_total_count = 0
+        start_ts = time.time()
+        report_ts = start_ts
 
-def main():
-    global file, log, sched
-    byte_report_count = 0
-    byte_total_count = 0
-    pkt_report_count = 0
-    pkt_total_count = 0
-    served_report_count = 0
-    served_total_count = 0
-    next_report_pkts = 100000
-    report_ts = time.time()
+        report_trfc_byte_count = 0
+        report_trfc_last_ts = 0
+        start_pkt_ts = 0
 
-    samples = []
+        scheduler = Scheduler(self.Q, self.N, self.hash_func)
 
-    dump = open(file, 'rb').read()
+        print "Starting simulation (tot_pkts=%s)...." % ns(tot_pkts, gnu=True, format="%.2f")
+        while True:
 
-    file_size = len(dump)
-    total_pkts = file_size / 24.0
+            # Extract packet from direction A
+            if pkt_a is None and idx_a < tot_pkt_a:
+                pkt_a = SimPacket(dump_a, idx_a * 32)
+                idx_a += 1
 
-    widgets = ['OPP-SIM: ', Percentage(), ' ', Bar(),
-               ' ', ETA(), ' ', FileTransferSpeed()]
+            # Extract packet from direction B
+            if pkt_b is None and idx_b < tot_pkt_b:
+                pkt_b = SimPacket(dump_b, idx_b * 32)
+                idx_b += 1
 
-    bar = progressbar.ProgressBar(max_value=file_size * 8, widgets=widgets).start()
+            # Choose between A and B.
+            if pkt_a is not None and (pkt_b is None or pkt_a.ts_nano <= pkt_b.ts_nano):
+                pkt = pkt_a
+                pkt_a = None
+            elif pkt_b is not None and (pkt_a is None or pkt_b.ts_nano <= pkt_a.ts_nano):
+                pkt = pkt_b
+                pkt_b = None
+            else:
+                # No more packets to process.
+                return
 
-    start_ts = time.time()
-    for x in range(file_size / 24):
+            pkt_count += 1
+            report_pkt_count += 1
+            report_trfc_byte_count += pkt.iplen
+            if start_pkt_ts == 0:
+                start_pkt_ts = pkt.ts_nano
+                report_trfc_last_ts = pkt.ts_nano
 
-        i0 = x * 24
-        i12 = i0 + 12
-        ts, size = unpack("dI", dump[i0:i12])
+            # Extract keys. /ipsrc
+            pkt.lkp_key = pkt.ip_src()
+            # Enqueue packet.
+            scheduler.accept(pkt)
+            # Execute scheduler.
+            if scheduler.execute_tick():
+                report_served_count += 1
 
-        # Key format (in bytes): 4 ipsrc 4 ipdst 2 sport 2 dport
-        key = dump[i12:i12 + 4]
+            # Report values every 1 second of traffic.
+            if (pkt.ts_nano - report_trfc_last_ts) >= 1:
+                report_delta_time = time.time() - report_ts
+                sim_pkt_rate = report_pkt_count / report_delta_time
+                sim_eta = (tot_pkts - pkt_count) / sim_pkt_rate
 
-        pkt = SimPacket(lookup_key=key, update_key=key)
+                if report_trfc_last_ts > 0:
+                    trfc_delta_time = pkt.ts_nano - report_trfc_last_ts
+                    trfc_bitrate = (report_trfc_byte_count * 8) / trfc_delta_time
+                    trfc_pkt_rate = report_pkt_count / trfc_delta_time
+                else:
+                    trfc_bitrate = 0
+                    trfc_pkt_rate = 0
 
-        # Enqueue packet.
-        sched.accept(pkt)
+                served_total_count += report_served_count
 
-        # Execute scheduler.
-        if sched.execute_tick():
-            served_report_count += 1
+                thrpt = report_served_count / float(report_pkt_count)
+                qocc = scheduler.queue_occupancy()
 
-        # Do some reporting.
-        byte_report_count += 24
-        pkt_report_count += 1
+                self.samples['thrpt'].append(thrpt)
+                self.samples['queues_sum'].append(qocc[0])
+                self.samples['queues_max'].append(qocc[1])
 
-        if pkt_report_count == next_report_pkts:
-            delta_seconds = time.time() - report_ts
+                print "sim_pkt_rate=%spps, sim_eta=%.1fsec, " \
+                      "trfc_bitrate=%sbps, trfc_pkt_rate=%spps, trfc_thrpt=%.3f, " \
+                      "q_sum=%dpkts, q_max=%dpkts" % (ns(sim_pkt_rate, gnu=True, format="%.1f"),
+                                                      sim_eta,
+                                                      ns(trfc_bitrate, gnu=True, format="%.1f"),
+                                                      ns(trfc_pkt_rate, gnu=True, format="%.1f"),
+                                                      thrpt,
+                                                      qocc[0],
+                                                      qocc[1])
 
-            byte_total_count += byte_report_count
-            served_total_count += served_report_count
-            pkt_total_count += pkt_report_count
-
-            pkt_rate = pkt_report_count / delta_seconds
-            byte_rate = byte_report_count / delta_seconds
-
-            remaining_bytes = (file_size - byte_total_count)
-            eta_seconds = remaining_bytes / byte_rate
-
-            qocc = sched.queue_occupancy()
-
-            throughput = served_report_count / float(pkt_report_count)
-
-            samples.append(throughput)
-
-            # print "pkt_rate=%spps, remaining=%sB, eta=%.1fsec, throughput=%.3f, q_sum=%dpkts, q_max=%dpkts" % (
-            #     naturalsize(pkt_rate, gnu=True, format="%.1f"),
-            #     naturalsize(remaining_bytes, gnu=True, format="%.1f"),
-            #     eta_seconds,
-            #     throughput,
-            #     qocc[0],
-            #     qocc[1])
-
-            # get a report approx every 5 seconds.
-            next_report_pkts = int(pkt_rate) * 1
-            pkt_report_count = 0
-            served_report_count = 0
-            byte_report_count = 0
-            report_ts = time.time()
-            bar.update(byte_total_count * 8)
-
-    print "\nOPP-SIM: Q=%d, N=%d, hash_func=%s, thr=%.3f" % (Q,
-                                                           N,
-                                                           hash_func.__name__,
-                                                           (served_total_count / float(pkt_total_count)))
+                # Reset report variables.
+                report_pkt_count = 0
+                report_trfc_last_ts = pkt.ts_nano
+                report_trfc_byte_count = 0
+                report_served_count = 0
+                report_ts = time.time()
 
 
 if __name__ == '__main__':
-    try:
-        main()
-    except KeyboardInterrupt:
-        pass
+    sim = Simulator(trace_day=conf.trace_day, trace_ts=125911, clock_rate=0, N=8, Q=16, hash_func=conf.crc32,
+                    key_extract_func=None)
+    sim.start()

@@ -24,7 +24,7 @@ class Scheduler:
         :return: True if packet can be accepted, False otherwise (e.g. queues are full)
         """
         # Enqueue ingress packet by its lookup key.
-        self.queues[self._digest(pkt.lookup_key)].put(pkt)
+        self.queues[self._digest(pkt.lookup_key())].put(pkt)
         # TODO if queues have limited size we could return false
         return True
 
@@ -73,7 +73,7 @@ class Scheduler:
             self.locked_keys.insert(0, None)
         else:
             # Insert hash of the update key at the beginning of the list.
-            self.locked_keys.insert(0, self._digest(pkt.update_key))
+            self.locked_keys.insert(0, self._digest(pkt.update_key()))
 
         # Remove last key.
         self.locked_keys.pop()

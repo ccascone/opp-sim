@@ -1,6 +1,8 @@
 import hashlib
 
 import os
+from PyCRC import CRC16
+from PyCRC import CRC32
 from os.path import isfile
 
 trace_dir = 'caida'
@@ -63,3 +65,17 @@ def read_md5_lines():
 # Read MD5 from file and store in a dict (file_names as key)
 for (k, v) in (l.split() for l in (l.strip() for l in read_md5_lines())):
     md5s[k] = v
+
+crc16c = CRC16.CRC16()
+crc32c = CRC32.CRC32()
+
+
+def crc16(input):
+    return crc16c.calculate(input)
+
+
+def crc32(input):
+    return crc32c.calculate(input)
+
+def key_ipsrc(pkt):
+    return pkt.ipsrc, pkt.ipsrc
