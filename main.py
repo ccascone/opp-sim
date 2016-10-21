@@ -1,4 +1,4 @@
-import threading
+import multiprocessing
 from Queue import Queue, Empty
 
 import progressbar
@@ -11,7 +11,7 @@ if __name__ == '__main__':
     running_jobs = Queue()
     running = True
     threads = []
-    lock = threading.Lock()
+    lock = multiprocessing.Lock()
     completed_jobs = 0
 
 
@@ -37,7 +37,7 @@ if __name__ == '__main__':
     bar.update(value=0, force=True)
 
     for i in range(10):
-        t = threading.Thread(target=worker, args=(job_queue, running_jobs, bar))
+        t = multiprocessing.Process(target=worker, args=(job_queue, running_jobs, bar))
         t.start()
         threads.append(t)
 
