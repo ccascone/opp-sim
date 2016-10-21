@@ -1,19 +1,14 @@
-import threading
+import pickle
 import time
 from collections import OrderedDict
-
-from collections import defaultdict
-
-from fifo import Fifo
-
-import pickle
-from threading import Lock
+from multiprocessing import Lock
 
 import os
 from humanize import naturalsize as ns
 
 import conf
 import params
+from fifo import Fifo
 from scheduler import Scheduler
 from simpacket import SimPacket
 
@@ -67,13 +62,13 @@ class Simulator:
             self.running = False
 
     def run_threaded(self, debug=False):
-        with lock:
-            if os.path.isfile("results/%s.lock" % self.label):
-                self._print("Execution aborted, there's already a simulator running for %s" % self.label)
-                return
-            else:
-                open("results/%s.lock" % self.label, 'w').write("locked")
-
+        lock.acquire()
+        if os.path.isfile("results/%s.lock" % self.label):
+            self._print("Execution aborted, there's already a simulator running for %s" % self.label)
+            return
+        else:
+            open("results/%s.lock" % self.label, 'w').write("locked")
+        lock.release()
         self.threaded = True
         self.debug = debug
         self.run()
@@ -81,20 +76,22 @@ class Simulator:
 
     def do_simulation(self):
 
-        with dump_locks[int(self.trace_ts) % max_dump_locks]:
-            if self.trace_ts not in dumps:
-                fname_a = conf.trace_dir + '/' + conf.trace_fname('A', self.trace_day, self.trace_ts, 'parsed')
-                fname_b = conf.trace_dir + '/' + conf.trace_fname('B', self.trace_day, self.trace_ts, 'parsed')
-                if not os.path.isfile(fname_a) or not os.path.isfile(fname_b):
-                    raise SimException("missing trace file for direction A or B")
-                self._print('Reading %s...' % fname_a, False)
-                dump_a = open(fname_a, 'rb').read()
-                self._print('Reading %s...' % fname_b, False)
-                dump_b = open(fname_b, 'rb').read()
-                dumps[self.trace_ts] = (dump_a, dump_b)
-            else:
-                self._print('Found cached dumps, using them...', False)
-                dump_a, dump_b = dumps[self.trace_ts]
+        dlock = dump_locks[int(self.trace_ts) % max_dump_locks]
+        dlock.acquire()
+        if self.trace_ts not in dumps:
+            fname_a = conf.trace_dir + '/' + conf.trace_fname('A', self.trace_day, self.trace_ts, 'parsed')
+            fname_b = conf.trace_dir + '/' + conf.trace_fname('B', self.trace_day, self.trace_ts, 'parsed')
+            if not os.path.isfile(fname_a) or not os.path.isfile(fname_b):
+                raise SimException("missing trace file for direction A or B")
+            self._print('Reading %s...' % fname_a, False)
+            dump_a = open(fname_a, 'rb').read()
+            self._print('Reading %s...' % fname_b, False)
+            dump_b = open(fname_b, 'rb').read()
+            dumps[self.trace_ts] = (dump_a, dump_b)
+        else:
+            self._print('Found cached dumps, using them...', False)
+            dump_a, dump_b = dumps[self.trace_ts]
+        dlock.release()
 
         tot_pkt_a, rem_a = divmod(len(dump_a), 32.0)
         tot_pkt_b, rem_b = divmod(len(dump_b), 32.0)

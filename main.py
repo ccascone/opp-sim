@@ -1,5 +1,6 @@
 import multiprocessing
-from Queue import Queue, Empty
+from multiprocessing import Queue
+from Queue import Empty
 
 import progressbar
 
