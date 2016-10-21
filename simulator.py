@@ -14,10 +14,6 @@ from simpacket import SimPacket
 
 lock = Lock()
 
-dumps = dict()
-max_dump_locks = 50
-dump_locks = [Lock() for _ in range(max_dump_locks)]
-
 
 class SimException(Exception):
     pass
@@ -76,22 +72,15 @@ class Simulator:
 
     def do_simulation(self):
 
-        dlock = dump_locks[int(self.trace_ts) % max_dump_locks]
-        dlock.acquire()
-        if self.trace_ts not in dumps:
-            fname_a = conf.trace_dir + '/' + conf.trace_fname('A', self.trace_day, self.trace_ts, 'parsed')
-            fname_b = conf.trace_dir + '/' + conf.trace_fname('B', self.trace_day, self.trace_ts, 'parsed')
-            if not os.path.isfile(fname_a) or not os.path.isfile(fname_b):
-                raise SimException("missing trace file for direction A or B")
-            self._print('Reading %s...' % fname_a, False)
-            dump_a = open(fname_a, 'rb').read()
-            self._print('Reading %s...' % fname_b, False)
-            dump_b = open(fname_b, 'rb').read()
-            dumps[self.trace_ts] = (dump_a, dump_b)
-        else:
-            self._print('Found cached dumps, using them...', False)
-            dump_a, dump_b = dumps[self.trace_ts]
-        dlock.release()
+        fname_a = conf.trace_dir + '/' + conf.trace_fname('A', self.trace_day, self.trace_ts, 'parsed')
+        fname_b = conf.trace_dir + '/' + conf.trace_fname('B', self.trace_day, self.trace_ts, 'parsed')
+
+        if not os.path.isfile(fname_a) or not os.path.isfile(fname_b):
+            raise SimException("missing trace file for direction A or B")
+        self._print('Reading %s...' % fname_a, False)
+        dump_a = open(fname_a, 'rb').read()
+        self._print('Reading %s...' % fname_b, False)
+        dump_b = open(fname_b, 'rb').read()
 
         tot_pkt_a, rem_a = divmod(len(dump_a), 32.0)
         tot_pkt_b, rem_b = divmod(len(dump_b), 32.0)
