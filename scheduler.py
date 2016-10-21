@@ -42,6 +42,9 @@ class Scheduler:
                 except IndexError:
                     pass
 
+        # Remove last key.
+        self.locked_keys.pop()
+
         # Update round robin priority.
         self.first_priority = (self.first_priority + 1) % self.Q
 
@@ -75,9 +78,6 @@ class Scheduler:
             # Insert hash of the update key at the beginning of the list.
             self.locked_keys.insert(0, self._digest(pkt.update_key))
 
-        # Remove last key.
-        self.locked_keys.pop()
-
     def _digest(self, key):
         try:
             return self.digests[key]
@@ -89,3 +89,6 @@ class Scheduler:
     def queue_occupancy(self):
         sizes = [x.qsize() for x in self.queues]
         return sum(sizes), max(sizes)
+
+    def digest_stats(self):
+        return [sum([1 for (_, cnt) in self.digests.iteritems() if cnt == q])/float(len(self.digests)) for q in range(self.Q)]

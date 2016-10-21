@@ -1,4 +1,4 @@
-cffi==1.8.1
+cffi==1.8.3
 dpkt==1.8.8
 greenlet==0.4.10
 humanize==0.5.1

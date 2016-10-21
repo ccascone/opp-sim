@@ -28,6 +28,7 @@ class Simulator:
         self.Q = Q
         self.hash_func = hash_func
         self.key_func = key_func
+        self.scheduler = Scheduler(Q, N, hash_func)
         self.sim_params = OrderedDict(trace_day=trace_day, trace_ts=trace_ts, N=N, Q=Q, clock_rate=clock_freq,
                                       key_func=key_func.__name__, hash_func=hash_func.__name__)
         if clock_freq > 0:
@@ -46,7 +47,9 @@ class Simulator:
             delta_minutes = (time.time() - start_time) / 60.0
             self._print("Simulation completed (duration=%.1fmin)." % delta_minutes)
             # Save results to file.
-            result = dict(params=dict(self.sim_params), samples=self.samples)
+            result = dict(params=dict(self.sim_params), samples=self.samples, digest_stats=self.scheduler.digest_stats())
+            if not os.path.exists("results"):
+                os.makedirs("results")
             if os.path.isfile("results/%s.p" % self.label):
                 os.remove("results/%s.p" % self.label)
             pickle.dump(result, open("results/%s.p" % self.label, 'wb'))
@@ -109,7 +112,6 @@ class Simulator:
         cycle = 0
 
         ingress_queue = Fifo()
-        scheduler = Scheduler(self.Q, self.N, self.hash_func)
 
         params_str = ', '.join("%s=%s" % (k, str(v)) for k, v in self.sim_params.items())
         self._print("Starting simulation (tot_pkts=%s): %s" % (ns(tot_pkts, gnu=True, format="%.2f"), params_str))
@@ -151,15 +153,15 @@ class Simulator:
                 else:
                     # Fast forward time till it's time to process this packet.
                     while pkt_relative_time > (cycle * self.tick_duration):
-                        if scheduler.execute_tick():
+                        if self.scheduler.execute_tick():
                             report_served_count += 1
                         cycle += 1
 
             # It's about time...
             # Extract keys. /ipsrc
             self.key_func(pkt)
-            scheduler.accept(pkt)
-            if scheduler.execute_tick():
+            self.scheduler.accept(pkt)
+            if self.scheduler.execute_tick():
                 report_served_count += 1
             cycle += 1
 
@@ -177,12 +179,12 @@ class Simulator:
                 trfc_pkt_rate = report_pkt_count / trfc_delta_time
                 served_total_count += report_served_count
                 thrpt = report_served_count / float(report_pkt_count)
-                qocc = scheduler.queue_occupancy()
+                qocc = self.scheduler.queue_occupancy()
 
                 report_values = OrderedDict(thrpt=thrpt,
                                             queues_sum=qocc[0],
                                             queues_max=qocc[1],
-                                            digests_count=len(scheduler.digests),
+                                            digests_count=len(self.scheduler.digests),
                                             trfc_bitrate=trfc_bitrate,
                                             trfc_pkt_rate=trfc_pkt_rate,
                                             ingress_queue=ingress_queue.qsize(),
@@ -234,5 +236,6 @@ class Simulator:
 
 if __name__ == '__main__':
     sim_parameters = params.gen_params()
-    sim = Simulator(**sim_parameters[0])
+    sim = Simulator(trace_day=conf.trace_day, trace_ts=125911, clock_freq=0, N=8, Q=8, hash_func=params.hash_crc16,
+                    key_func=params.key_ipsrc_ipdst_X_ipdst_ipsrc)
     sim.run()
