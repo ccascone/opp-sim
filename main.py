@@ -5,7 +5,7 @@ import os
 import params
 from simulator import Simulator
 
-MAX_PROCESS = 10
+MAX_PROCESS = 2
 AVG_SIM_DURATION = 200  # seconds
 
 
@@ -21,8 +21,9 @@ def print_eta(n):
             print "ETA: %.1f days" % (eta_hours / 24.0)
 
 
-def worker(simulator):
-    simulator.run(threaded=True, debug=False)
+def worker(params):
+    s = Simulator(**params)
+    s.run(threaded=True, debug=False)
     count.value += 1
     print "Completed %d simulations..." % count.value
 
@@ -31,11 +32,11 @@ if __name__ == '__main__':
     count = Value('i', 0)
     pool = Pool(MAX_PROCESS)
 
-    simulators = [Simulator(**params) for params in params.gen_params()]
-    num_simulators = len(simulators)
+    param_list = params.gen_params()
+    num_simulators = len(param_list)
 
     print "Will execute %d simulations (pid %d)..." % (num_simulators, os.getpgid(0))
     print_eta(num_simulators)
 
-    pool.map(worker, simulators)
+    pool.map(worker, param_list)
     print "All done!"
