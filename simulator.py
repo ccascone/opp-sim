@@ -41,7 +41,6 @@ class Simulator:
         self.results_fname = "results/%s.p" % self.label
 
     def _run(self):
-        self._print("Configuration: %s" % self.label, False)
         if os.path.isfile(self.results_fname):
             self._print("WARNING: simulation aborted, result already exists for this configuration")
             return
@@ -71,14 +70,14 @@ class Simulator:
         lock.acquire()
         lock_fname = self.results_fname + '.lock'
         if os.path.isfile(lock_fname):
-            self._print("ERROR: simulation aborted, another simulator is running for this configuration" % self.label)
+            self._print("ERROR: simulation aborted, another simulator is running for this configuration")
             return
         open(lock_fname, 'w').write("locked")
         lock.release()
         self.threaded = threaded
         self.debug = debug
         try:
-            self.run()
+            self._run()
         finally:
             os.remove(lock_fname)
 
