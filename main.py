@@ -1,54 +1,41 @@
-import multiprocessing
-from multiprocessing import Queue
-from Queue import Empty
+from multiprocessing import Pool, Value
 
-import progressbar
+import os
 
 import params
 from simulator import Simulator
 
+MAX_PROCESS = 10
+AVG_SIM_DURATION = 200  # seconds
+
+
+def print_eta(n):
+    eta_minutes = ((n * AVG_SIM_DURATION) / MAX_PROCESS) / 60.0
+    if eta_minutes < 60:
+        print "ETA: %.0f minutes" % eta_minutes
+    else:
+        eta_hours = eta_minutes / 60
+        if eta_hours < 24:
+            print "ETA: %.1f hours" % eta_hours
+        else:
+            print "ETA: %.1f days" % (eta_hours / 24.0)
+
+
+def worker(simulator):
+    simulator.run(threaded=True, debug=False)
+    count.value += 1
+    print "Completed %d simulations..." % count.value
+
+
 if __name__ == '__main__':
-    job_queue = Queue()
-    running_jobs = Queue()
-    running = True
-    threads = []
-    lock = multiprocessing.Lock()
-    completed_jobs = 0
+    count = Value('i', 0)
+    pool = Pool(MAX_PROCESS)
 
+    simulators = [Simulator(**params) for params in params.gen_params()]
+    num_simulators = len(simulators)
 
-    def worker(waiting_jobs, running_jobs, bar):
-        while running:
-            try:
-                simulator = waiting_jobs.get(block=True, timeout=1)
-                running_jobs.put(simulator)
-                simulator.run(threaded=True, debug=True)
-                with lock:
-                    bar.update(bar.value + 1)
-            except Empty:
-                pass
+    print "Will execute %d simulations (pid %d)..." % (num_simulators, os.getpgid(0))
+    print_eta(num_simulators)
 
-
-    for param_dict in params.gen_params():
-        job_queue.put_nowait(Simulator(**param_dict))
-
-    completed_jobs = job_queue.qsize()
-    print "Will execute %d simulations" % completed_jobs
-    widgets = [' [', progressbar.Timer(), '] ', progressbar.Bar(), ' (', progressbar.ETA(), ') ', ]
-    bar = progressbar.ProgressBar(widgets=widgets, max_value=completed_jobs)
-    bar.update(value=0, force=True)
-
-    for i in range(10):
-        t = multiprocessing.Process(target=worker, args=(job_queue, running_jobs, bar))
-        t.start()
-        threads.append(t)
-
-    try:
-        for t in threads:
-            t.join()
-    except KeyboardInterrupt:
-        running = False
-        while True:
-            try:
-                running_jobs.get_nowait().running = False
-            except Empty:
-                break
+    pool.map(worker, simulators)
+    print "All done!"
