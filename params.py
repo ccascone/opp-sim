@@ -11,6 +11,8 @@ crc32c = CRC32.CRC32()
 
 N_values = [8]
 Q_values = range(8, 17)
+clock_freqs = [0, 1 * 10 ** 6, 1.2 * 10**6, 1.5 * 10**6]
+traces = conf.timestamps[0:3]
 
 
 def hash_crc16(key):
@@ -74,20 +76,18 @@ def key_proto_sport(pkt):
 def gen_params():
     me = __import__(inspect.getmodulename(__file__))
     functions = inspect.getmembers(me, inspect.isfunction)
-
     params = []
-    for trace_ts in conf.timestamps[10:20]:
+    for trace_ts in traces:
         for Q in Q_values:
             for N in N_values:
                 for hash_func in filter(lambda f: "hash_" in f[0], functions):
-                    for key_func in filter(lambda f: "key_" in f[0], functions):
-                        params.append(dict(trace_day=conf.trace_day, trace_ts=trace_ts, clock_freq=0,
-                                           Q=Q, N=N, hash_func=hash_func[1], key_func=key_func[1]))
-
+                    for clock_freq in clock_freqs:
+                        for key_func in filter(lambda f: "key_" in f[0], functions):
+                            params.append(dict(trace_day=conf.trace_day, trace_ts=trace_ts, clock_freq=clock_freq,
+                                               Q=Q, N=N, hash_func=hash_func[1], key_func=key_func[1]))
     shuffle(params)
-
     return params
 
 
 if __name__ == '__main__':
-    print gen_params()
+    print len(gen_params())

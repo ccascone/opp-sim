@@ -21,7 +21,7 @@ if __name__ == '__main__':
             try:
                 simulator = waiting_jobs.get(block=True, timeout=1)
                 running_jobs.put(simulator)
-                simulator.run_threaded(debug=True)
+                simulator.run(threaded=True, debug=True)
                 with lock:
                     bar.update(bar.value + 1)
             except Empty:

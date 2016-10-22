@@ -3,3 +3,4 @@ caida
 !caida/md5.md5
 .idea
 *.pyc
+results/*.p

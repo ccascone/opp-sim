@@ -38,21 +38,28 @@ class Simulator:
         self.label = '-'.join(map(str, self.sim_params.values()))
         self.threaded = False
         self.debug = False
+        self.results_fname = "results/%s.p" % self.label
 
-    def run(self):
+    def _run(self):
+        self._print("Configuration: %s" % self.label, False)
+        if os.path.isfile(self.results_fname):
+            self._print("WARNING: simulation aborted, result already exists for this configuration")
+            return
+
         self._print("Running simulator %s" % self.label, False)
         start_time = time.time()
+
         try:
             self.do_simulation()
             delta_minutes = (time.time() - start_time) / 60.0
             self._print("Simulation completed (duration=%.1fmin)." % delta_minutes)
             # Save results to file.
-            result = dict(params=dict(self.sim_params), samples=self.samples, digest_stats=self.scheduler.digest_stats())
+            result = dict(params=dict(self.sim_params),
+                          samples=self.samples,
+                          digest_stats=self.scheduler.digest_stats())
             if not os.path.exists("results"):
                 os.makedirs("results")
-            if os.path.isfile("results/%s.p" % self.label):
-                os.remove("results/%s.p" % self.label)
-            pickle.dump(result, open("results/%s.p" % self.label, 'wb'))
+            pickle.dump(result, open(self.results_fname, 'wb'))
         except SimException as e:
             self._print("ERROR: %s" % e.message)
         except KeyboardInterrupt:
@@ -60,18 +67,20 @@ class Simulator:
         finally:
             self.running = False
 
-    def run_threaded(self, debug=False):
+    def run(self, threaded=False, debug=False):
         lock.acquire()
-        if os.path.isfile("results/%s.lock" % self.label):
-            self._print("Execution aborted, there's already a simulator running for %s" % self.label)
+        lock_fname = self.results_fname + '.lock'
+        if os.path.isfile(lock_fname):
+            self._print("ERROR: simulation aborted, another simulator is running for this configuration" % self.label)
             return
-        else:
-            open("results/%s.lock" % self.label, 'w').write("locked")
+        open(lock_fname, 'w').write("locked")
         lock.release()
-        self.threaded = True
+        self.threaded = threaded
         self.debug = debug
-        self.run()
-        os.remove("results/%s.lock" % self.label)
+        try:
+            self.run()
+        finally:
+            os.remove(lock_fname)
 
     def do_simulation(self):
 
@@ -79,7 +88,8 @@ class Simulator:
         fname_b = conf.trace_dir + '/' + conf.trace_fname('B', self.trace_day, self.trace_ts, 'parsed')
 
         if not os.path.isfile(fname_a) or not os.path.isfile(fname_b):
-            raise SimException("missing trace file for direction A or B")
+            raise SimException("Missing trace file for direction A or B")
+
         self._print('Reading %s...' % fname_a, False)
         dump_a = open(fname_a, 'rb').read()
         self._print('Reading %s...' % fname_b, False)
@@ -89,7 +99,7 @@ class Simulator:
         tot_pkt_b, rem_b = divmod(len(dump_b), 32.0)
 
         if (rem_a + rem_b) != 0:
-            raise SimException("invalid byte count in file A or B (file size must be multiple of 32 bytes)")
+            raise SimException("Invalid byte count in file A or B (file size must be multiple of 32 bytes)")
 
         tot_pkts = tot_pkt_a + tot_pkt_b
 
@@ -108,13 +118,14 @@ class Simulator:
 
         report_trfc_byte_count = 0
         report_trfc_last_ts = 0
+        report_queueing_delay = 0
+        report_last_cycle = 0
         start_pkt_ts = 0
         cycle = 0
 
         ingress_queue = Fifo()
 
-        params_str = ', '.join("%s=%s" % (k, str(v)) for k, v in self.sim_params.items())
-        self._print("Starting simulation (tot_pkts=%s): %s" % (ns(tot_pkts, gnu=True, format="%.2f"), params_str))
+        self._print("Starting simulation (tot_pkts=%s)..." % ns(tot_pkts, gnu=True, format="%.2f"))
 
         while self.running:
 
@@ -122,12 +133,10 @@ class Simulator:
             if pkt_a is None and idx_a < tot_pkt_a:
                 pkt_a = SimPacket(dump_a, idx_a * 32)
                 idx_a += 1
-
             # Extract packet from direction B
             if pkt_b is None and idx_b < tot_pkt_b:
                 pkt_b = SimPacket(dump_b, idx_b * 32)
                 idx_b += 1
-
             # Choose between A and B.
             if pkt_a is not None and (pkt_b is None or pkt_a.ts_nano <= pkt_b.ts_nano):
                 pkt = pkt_a
@@ -137,25 +146,23 @@ class Simulator:
                 pkt_b = None
             else:
                 # No more packets to process.
-                return True
+                return
 
             if start_pkt_ts == 0:
                 start_pkt_ts = pkt.ts_nano
                 report_trfc_last_ts = pkt.ts_nano
             elif self.clock_freq > 0:
-                # We are simulating a clock rate.
+                # We are simulating a clock frequency.
                 pkt_relative_time = pkt.ts_nano - start_pkt_ts
-
-                if pkt_relative_time < (cycle * self.tick_duration):
-                    if not ingress_queue.empty():
-                        ingress_queue.put(pkt)
-                        pkt = ingress_queue.get()
-                else:
+                while True:
                     # Fast forward time till it's time to process this packet.
-                    while pkt_relative_time > (cycle * self.tick_duration):
-                        if self.scheduler.execute_tick():
-                            report_served_count += 1
-                        cycle += 1
+                    sim_time = cycle * self.tick_duration
+                    if pkt_relative_time < sim_time:
+                        report_queueing_delay += sim_time - pkt_relative_time
+                        break
+                    if self.scheduler.execute_tick():
+                        report_served_count += 1
+                    cycle += 1
 
             # It's about time...
             # Extract keys. /ipsrc
@@ -174,20 +181,23 @@ class Simulator:
                 report_delta_time = time.time() - report_ts
                 sim_pkt_rate = report_pkt_count / report_delta_time
                 sim_eta = (tot_pkts - pkt_count) / sim_pkt_rate
+                sim_avg_queue_delay = report_queueing_delay / float(report_pkt_count)
                 trfc_delta_time = pkt.ts_nano - report_trfc_last_ts
                 trfc_bitrate = (report_trfc_byte_count * 8) / trfc_delta_time
                 trfc_pkt_rate = report_pkt_count / trfc_delta_time
                 served_total_count += report_served_count
                 thrpt = report_served_count / float(report_pkt_count)
+                util = trfc_pkt_rate / float(cycle - report_last_cycle)
                 qocc = self.scheduler.queue_occupancy()
 
                 report_values = OrderedDict(thrpt=thrpt,
-                                            queues_sum=qocc[0],
-                                            queues_max=qocc[1],
+                                            sched_queues_sum=qocc[0],
+                                            sched_queues_max=qocc[1],
                                             digests_count=len(self.scheduler.digests),
                                             trfc_bitrate=trfc_bitrate,
                                             trfc_pkt_rate=trfc_pkt_rate,
-                                            ingress_queue=ingress_queue.qsize(),
+                                            util=util,
+                                            sim_avg_queue_delay=sim_avg_queue_delay,
                                             sim_pkt_rate=sim_pkt_rate,
                                             sim_eta=sim_eta)
 
@@ -201,9 +211,12 @@ class Simulator:
                 report_trfc_last_ts = pkt.ts_nano
                 report_trfc_byte_count = 0
                 report_served_count = 0
+                report_queueing_delay = 0
+                report_last_cycle = cycle
                 report_ts = time.time()
 
-        raise SimException("forced shutdown")
+        # self.running is False
+        raise SimException("Forced shutdown")
 
     def _print(self, msg, important=True):
         if not self.threaded:
@@ -235,7 +248,7 @@ class Simulator:
 
 
 if __name__ == '__main__':
-    sim_parameters = params.gen_params()
-    sim = Simulator(trace_day=conf.trace_day, trace_ts=125911, clock_freq=0, N=8, Q=8, hash_func=params.hash_crc16,
-                    key_func=params.key_ipsrc_ipdst_X_ipdst_ipsrc)
+    # sim_parameters = params.gen_params()
+    sim = Simulator(trace_day=conf.trace_day, trace_ts=130000, clock_freq=1.5 * 10 ** 6, N=8, Q=8,
+                    hash_func=params.hash_crc32, key_func=params.key_ipsrc)
     sim.run()
