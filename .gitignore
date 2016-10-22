@@ -4,3 +4,6 @@ caida
 .idea
 *.pyc
 results/*.p
+results/*.lock
+simulator.log
+parse_report.txt
