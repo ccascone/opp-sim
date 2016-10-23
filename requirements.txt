@@ -1,7 +1,9 @@
 cffi==1.8.3
+cityhash==0.1.7
 dpkt==1.8.8
 greenlet==0.4.10
 humanize==0.5.1
+jenkins==1.0.2
 progressbar2==3.10.1
 PyCRC==1.21
 python-utils==2.0.0

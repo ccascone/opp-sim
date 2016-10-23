@@ -3,6 +3,7 @@ import time
 from collections import OrderedDict
 from multiprocessing import Lock
 
+import math
 import os
 from humanize import naturalsize as ns
 
@@ -20,7 +21,7 @@ class SimException(Exception):
 
 
 class Simulator:
-    def __init__(self, trace_day, trace_ts, clock_freq, N, Q, hash_func=None, key_func=None):
+    def __init__(self, trace_day, trace_ts, clock_freq, N, Q, hash_func=None, key_func=None, read_chunk=0):
         self.trace_day = trace_day
         self.trace_ts = trace_ts
         self.clock_freq = clock_freq  # Ghz
@@ -29,8 +30,9 @@ class Simulator:
         self.hash_func = hash_func
         self.key_func = key_func
         self.scheduler = Scheduler(Q, N, hash_func)
+        self.read_chunk = read_chunk
         self.sim_params = OrderedDict(trace_day=trace_day, trace_ts=trace_ts, N=N, Q=Q, clock_rate=clock_freq,
-                                      key_func=key_func.__name__, hash_func=hash_func.__name__)
+                                      key_func=key_func.__name__, hash_func=hash_func.__name__, read_chunk=read_chunk)
         if clock_freq > 0:
             self.tick_duration = 1.0 / clock_freq
         self.running = True
@@ -163,6 +165,14 @@ class Simulator:
                         report_served_count += 1
                     cycle += 1
 
+            if self.read_chunk > 0 and pkt.iplen > self.read_chunk:
+                # Need more that 1 clock cycle to read the packet
+                read_cycles = int(math.ceil(pkt.iplen / float(self.read_chunk))) - 1
+                cycle += read_cycles
+                for _ in range(read_cycles):
+                    if self.scheduler.execute_tick():
+                        report_served_count += 1
+
             # It's about time...
             # Extract keys. /ipsrc
             self.key_func(pkt)
@@ -248,6 +258,6 @@ class Simulator:
 
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
-    sim = Simulator(trace_day=conf.trace_day, trace_ts=130000, clock_freq=1.5 * 10 ** 6, N=8, Q=8,
-                    hash_func=params.hash_crc32, key_func=params.key_ipsrc)
+    sim = Simulator(trace_day=conf.trace_day, trace_ts=130000, clock_freq=1 * 10 ** 6, N=8, Q=8,
+                    hash_func=params.hash_cityhash32, key_func=params.key_ipsrc, read_chunk=0)
     sim.run()

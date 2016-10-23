@@ -91,4 +91,5 @@ class Scheduler:
         return sum(sizes), max(sizes)
 
     def digest_stats(self):
-        return [sum([1 for (_, cnt) in self.digests.iteritems() if cnt == q])/float(len(self.digests)) for q in range(self.Q)]
+        digest_count = float(len(self.digests))
+        return [sum(x == q for x in self.digests.values()) / digest_count for q in range(self.Q)]
