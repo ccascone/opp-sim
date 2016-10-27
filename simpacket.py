@@ -9,9 +9,9 @@ class SimPacket():
         self.lookup_key = None
         self.update_key = None
 
-    def buf_slice(self, start, len):
+    def buf_slice(self, start, length):
         # type: () -> string
-        return self.packed_buffer[self.offset + 18 + start:self.offset + 18 + start + len]
+        return self.packed_buffer[self.offset + 18 + start:self.offset + 18 + start + length]
 
     def ipsrc(self):
         # type: () -> string

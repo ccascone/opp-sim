@@ -3,6 +3,7 @@ import time
 from struct import pack, unpack
 
 import dpkt
+import os
 import progressbar
 from dpkt.tcp import TCP
 from dpkt.udp import UDP
@@ -12,6 +13,7 @@ from progressbar import FileTransferSpeed
 from progressbar import Percentage
 
 from conf import *
+from misc import was_downloaded
 
 
 def parse_packets_and_times(day, ts, direct):
@@ -113,7 +115,7 @@ def try_parsing(fname):
     if fname in (pcapgz_fname, pcap_fname):
         if fname == pcapgz_fname and not was_downloaded(fname):
             return
-        if isfile(times_fname):
+        if os.path.isfile(times_fname):
             other_fname = times_fname
         elif was_downloaded(timesgz_fname):
             other_fname = timesgz_fname
@@ -122,7 +124,7 @@ def try_parsing(fname):
     elif fname in (timesgz_fname, times_fname):
         if fname == timesgz_fname and not was_downloaded(fname):
             return
-        if isfile(pcap_fname):
+        if os.path.isfile(pcap_fname):
             other_fname = pcap_fname
         elif was_downloaded(pcapgz_fname):
             other_fname = pcapgz_fname
@@ -138,7 +140,7 @@ def try_parsing(fname):
             retcode = os.system('gunzip ' + f)
             assert retcode == 0, "unable to gunzip " + f
 
-    assert isfile(pcap_fname) and isfile(times_fname), \
+    assert os.path.isfile(pcap_fname) and os.path.isfile(times_fname), \
         "Unable to find '.pcap' or '.times' file for trace {direction}-{day}-{ts}".format(**locals())
     try:
         parse_packets_and_times(day, ts, direction)

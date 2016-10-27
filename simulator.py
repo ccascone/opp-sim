@@ -1,16 +1,15 @@
 import pickle
 import time
 from collections import OrderedDict
+from math import ceil
 from multiprocessing import Lock
 
-import math
 import os
-from humanize import naturalsize as ns
 
 import conf
+import misc
 import params
-from fifo import Fifo
-from scheduler import Scheduler
+from scheduler import Scheduler as Scheduler
 from simpacket import SimPacket
 
 lock = Lock()
@@ -21,7 +20,26 @@ class SimException(Exception):
 
 
 class Simulator:
-    def __init__(self, trace_day, trace_ts, clock_freq, N, Q, hash_func=None, key_func=None, read_chunk=0):
+    def __init__(self, trace_day, trace_ts, N, Q, hash_func, key_func, clock_freq=0, read_chunk=0, line_rate_util=0.0):
+        """
+        Creates a new simulator instance.
+        :param trace_day: Day of the traffic trace to use.
+        :param trace_ts: Timestamp of the traffic trace to use.
+        :param N: Number of clock cycles needed for the OPP stage to atomically process a packet.
+        :param Q: Number of flow queues.
+        :param hash_func: A function to compute the digests of the lookup and update keys.
+        :param key_func: A function to extract the lookup and update keys from the packet.
+        :param clock_freq: A clock frequency (Hz), 0 to simulate the case where packets arrives at each clock cycle.
+        :param read_chunk: Number of bytes that can be read from an input port at each clock cycle.
+                            0 to read the whole packet in 1 tick.
+        :param line_rate_util:
+        """
+        # type: (basestring, int, int, int, function, function, int, int, int) -> None
+        self.sim_params = OrderedDict(trace_day=trace_day, trace_ts=trace_ts, N=N, Q=Q, clock_rate=clock_freq,
+                                      key_func=key_func.__name__, hash_func=hash_func.__name__, read_chunk=read_chunk,
+                                      sim_util=line_rate_util)
+        self.label = '-'.join(map(str, self.sim_params.values()))
+
         self.trace_day = trace_day
         self.trace_ts = trace_ts
         self.clock_freq = clock_freq  # Ghz
@@ -30,20 +48,25 @@ class Simulator:
         self.hash_func = hash_func
         self.key_func = key_func
         self.scheduler = Scheduler(Q, N, hash_func)
-        self.read_chunk = read_chunk
-        self.sim_params = OrderedDict(trace_day=trace_day, trace_ts=trace_ts, N=N, Q=Q, clock_rate=clock_freq,
-                                      key_func=key_func.__name__, hash_func=hash_func.__name__, read_chunk=read_chunk)
+        self.read_chunk = float(read_chunk)
+        assert 0 <= line_rate_util <= 1
+        self.sim_util = float(line_rate_util)
+        self.report_interval = 1
         if clock_freq > 0:
-            self.tick_duration = 1.0 / clock_freq
+            self.tick_duration = 1 / float(clock_freq)
         self.running = True
         self.samples = dict()
-        self.label = '-'.join(map(str, self.sim_params.values()))
         self.threaded = False
         self.debug = False
         self.results_fname = "results/%s.p" % self.label
+        if read_chunk > 0 and clock_freq > 0:
+            self.line_rate = clock_freq * read_chunk * 8
+        else:
+            self.line_rate = 0
+        self.time_stretch_factor = 0
 
     def _run(self):
-        if os.path.isfile(self.results_fname):
+        if not self.debug and os.path.isfile(self.results_fname):
             self._print("WARNING: simulation aborted, result already exists for this configuration")
             return
 
@@ -54,15 +77,17 @@ class Simulator:
             self.do_simulation()
             delta_minutes = (time.time() - start_time) / 60.0
             self._print("Simulation completed (duration=%.1fmin)." % delta_minutes)
-            # Save results to file.
-            result = dict(params=dict(self.sim_params),
-                          samples=self.samples,
-                          digest_stats=self.scheduler.digest_stats())
-            if not os.path.exists("results"):
-                os.makedirs("results")
-            pickle.dump(result, open(self.results_fname, 'wb'))
+            if not self.debug:
+                # Save results under ./results
+                if not os.path.exists("results"):
+                    os.makedirs("results")
+                result = dict(params=dict(self.sim_params),
+                              samples=self.samples,
+                              digest_stats=self.scheduler.digest_stats(),
+                              line_rate=self.line_rate)
+                pickle.dump(result, open(self.results_fname, 'wb'))
         except SimException as e:
-            self._print("ERROR: %s" % e.message)
+            self._print("*** ERROR: %s" % e.message)
         except KeyboardInterrupt:
             self._print("Simulation interrupted. Results won't be saved to disk.")
         finally:
@@ -72,7 +97,7 @@ class Simulator:
         lock.acquire()
         lock_fname = self.results_fname + '.lock'
         if os.path.isfile(lock_fname):
-            self._print("ERROR: simulation aborted, another simulator is running for this configuration")
+            self._print("*** ERROR: simulation aborted, another simulator is running for this configuration")
             return
         open(lock_fname, 'w').write("locked")
         lock.release()
@@ -102,52 +127,64 @@ class Simulator:
         if (rem_a + rem_b) != 0:
             raise SimException("Invalid byte count in file A or B (file size must be multiple of 32 bytes)")
 
+        if self.line_rate > 0 and self.sim_util != 0:
+            self._print('Simulated line rate is %sbps' % misc.hnum(self.line_rate), False)
+            self._print('Evaluating traces bitrate...', False)
+            bitrate_a = misc.evaluate_bitrate(dump_a)
+            bitrate_b = misc.evaluate_bitrate(dump_b)
+            max_bitrate = bitrate_a['max'] + bitrate_b['max']
+            self.time_stretch_factor = max_bitrate / (self.line_rate * self.sim_util)
+            self._print('Trace max bitrate is %sbps, setting time stretch factor to %f...'
+                        % (misc.hnum(max_bitrate), self.time_stretch_factor), False)
+
         tot_pkts = tot_pkt_a + tot_pkt_b
 
-        idx_a = 0
-        idx_b = 0
+        idx_a = 0  # index of next packet to be read from trace A
+        idx_b = 0  # ... from trace B
         pkt_a = None
         pkt_b = None
 
-        # Variables needed for reporting.
-        pkt_count = 0
-        report_pkt_count = 0
-        report_served_count = 0
-        served_total_count = 0
-        start_ts = time.time()
+        start_ts = time.time()  # now
+        start_pkt_ts = 0  # timestamp of the first packet processed
+        cycle = 0  # next cycle to be executed
+        pkt_count = 0  # count of packets processed
+        work_cycles_count = 0  # count of cycles where the scheduler was not IDLE
+
+        # Report variables. These are reset every report interval.
         report_ts = start_ts
+        report_pkt_count = 0
+        report_work_cycle_count = 0
+        report_read_cycle_count = 0  # number of cycles spent reading packets from the ingress queue
+        report_trfc_byte_count = 0  # number of bytes processed
+        report_trfc_last_ts = 0  # timestamp of the last packet of the last report
+        report_queueing_delay = 0  # cumulative ingress queuing delay
+        report_last_cycle = 0  # last cycle number of the last report
 
-        report_trfc_byte_count = 0
-        report_trfc_last_ts = 0
-        report_queueing_delay = 0
-        report_last_cycle = 0
-        start_pkt_ts = 0
-        cycle = 0
-
-        ingress_queue = Fifo()
-
-        self._print("Starting simulation (tot_pkts=%s)..." % ns(tot_pkts, gnu=True, format="%.2f"))
+        self._print("Starting simulation (tot_pkts=%s)..." % misc.hnum(tot_pkts))
 
         while self.running:
 
             # Extract packet from direction A
-            if pkt_a is None and idx_a < tot_pkt_a:
+            if not pkt_a and idx_a < tot_pkt_a:
                 pkt_a = SimPacket(dump_a, idx_a * 32)
                 idx_a += 1
             # Extract packet from direction B
-            if pkt_b is None and idx_b < tot_pkt_b:
+            if not pkt_b and idx_b < tot_pkt_b:
                 pkt_b = SimPacket(dump_b, idx_b * 32)
                 idx_b += 1
             # Choose between A and B.
-            if pkt_a is not None and (pkt_b is None or pkt_a.ts_nano <= pkt_b.ts_nano):
+            if pkt_a and (not pkt_b or pkt_a.ts_nano <= pkt_b.ts_nano):
                 pkt = pkt_a
                 pkt_a = None
-            elif pkt_b is not None and (pkt_a is None or pkt_b.ts_nano <= pkt_a.ts_nano):
+            elif pkt_b and (not pkt_a or pkt_b.ts_nano <= pkt_a.ts_nano):
                 pkt = pkt_b
                 pkt_b = None
             else:
                 # No more packets to process.
                 return
+
+            if self.time_stretch_factor != 0:
+                pkt.ts_nano *= self.time_stretch_factor
 
             if start_pkt_ts == 0:
                 start_pkt_ts = pkt.ts_nano
@@ -155,59 +192,79 @@ class Simulator:
             elif self.clock_freq > 0:
                 # We are simulating a clock frequency.
                 pkt_relative_time = pkt.ts_nano - start_pkt_ts
-                while True:
+                sim_time = cycle * self.tick_duration
+                if pkt_relative_time > sim_time:
                     # Fast forward time till it's time to process this packet.
-                    sim_time = cycle * self.tick_duration
-                    if pkt_relative_time < sim_time:
-                        report_queueing_delay += sim_time - pkt_relative_time
-                        break
-                    if self.scheduler.execute_tick():
-                        report_served_count += 1
-                    cycle += 1
+                    extra_cycles_to_do = int(ceil((pkt_relative_time - sim_time) / self.tick_duration))
+                    cycle += extra_cycles_to_do
+                    for _ in range(extra_cycles_to_do):
+                        result = self.scheduler.execute_tick()
+                        if result == 1:
+                            report_work_cycle_count += 1
+                        elif result == -1:
+                            # Scheduler is empty.
+                            # No need to execute ticks for the rest of the extra cycles.
+                            break
+                else:
+                    # Report any queuing delay
+                    report_queueing_delay += sim_time - pkt_relative_time
 
-            if self.read_chunk > 0 and pkt.iplen > self.read_chunk:
-                # Need more that 1 clock cycle to read the packet
-                read_cycles = int(math.ceil(pkt.iplen / float(self.read_chunk))) - 1
-                cycle += read_cycles
-                for _ in range(read_cycles):
-                    if self.scheduler.execute_tick():
-                        report_served_count += 1
+            if 0 < self.read_chunk < pkt.iplen:
+                # Need more than 1 clock cycle to read the packet
+                extra_cycles_to_do = int(ceil(pkt.iplen / self.read_chunk)) - 1
+                cycle += extra_cycles_to_do
+                report_read_cycle_count += extra_cycles_to_do
+                for _ in range(extra_cycles_to_do):
+                    result = self.scheduler.execute_tick()
+                    if result == 1:
+                        report_work_cycle_count += 1
+                    elif result == -1:
+                        break
 
             # It's about time...
-            # Extract keys. /ipsrc
+            # Extract keys.
             self.key_func(pkt)
             self.scheduler.accept(pkt)
-            if self.scheduler.execute_tick():
-                report_served_count += 1
-            cycle += 1
+            if self.scheduler.execute_tick() == 1:
+                report_work_cycle_count += 1
 
-            pkt_count += 1
+            cycle += 1
             report_pkt_count += 1
+            report_read_cycle_count += 1
             report_trfc_byte_count += pkt.iplen
 
-            if (pkt.ts_nano - report_trfc_last_ts) >= 1:
+            if (pkt.ts_nano - report_trfc_last_ts) >= self.report_interval:
                 # Report values every 1 second of traffic.
                 report_delta_time = time.time() - report_ts
-                sim_pkt_rate = report_pkt_count / report_delta_time
-                sim_eta = (tot_pkts - pkt_count) / sim_pkt_rate
+                report_cycle_count = cycle - report_last_cycle
+                sim_pkt_rate = report_pkt_count / float(report_delta_time)
+                sim_cycle_rate = report_cycle_count / float(report_delta_time)
+                sim_eta = (tot_pkts - pkt_count) / sim_pkt_rate  # seconds
                 sim_avg_queue_delay = report_queueing_delay / float(report_pkt_count)
+
                 trfc_delta_time = pkt.ts_nano - report_trfc_last_ts
                 trfc_bitrate = (report_trfc_byte_count * 8) / trfc_delta_time
                 trfc_pkt_rate = report_pkt_count / trfc_delta_time
-                served_total_count += report_served_count
-                thrpt = report_served_count / float(report_pkt_count)
-                util = trfc_pkt_rate / float(cycle - report_last_cycle)
-                qocc = self.scheduler.queue_occupancy()
 
-                report_values = OrderedDict(thrpt=thrpt,
-                                            sched_queues_sum=qocc[0],
-                                            sched_queues_max=qocc[1],
-                                            digests_count=len(self.scheduler.digests),
+                work_cycles_count += report_work_cycle_count
+                pkt_count += report_pkt_count
+
+                thrpt = report_work_cycle_count / float(report_pkt_count)
+
+                util = report_read_cycle_count / float(cycle - report_last_cycle)
+                queue_sizes = [len(x) for x in self.scheduler.queues]
+
+                report_values = OrderedDict(sched_thrpt=thrpt,
+                                            sched_queues_avg=(sum(queue_sizes) / float(self.Q)),
+                                            sched_queues_max=max(queue_sizes),
+                                            sched_queues_min=min(queue_sizes),
+                                            sched_keys_count=len(self.scheduler.digests),
                                             trfc_bitrate=trfc_bitrate,
                                             trfc_pkt_rate=trfc_pkt_rate,
-                                            util=util,
-                                            sim_avg_queue_delay=sim_avg_queue_delay,
+                                            cycle_util=util,
+                                            avg_in_queue_delay=sim_avg_queue_delay,
                                             sim_pkt_rate=sim_pkt_rate,
+                                            sim_cycle_rate=sim_cycle_rate,
                                             sim_eta=sim_eta)
 
                 self._append_samples(report_values)
@@ -219,7 +276,8 @@ class Simulator:
                 report_pkt_count = 0
                 report_trfc_last_ts = pkt.ts_nano
                 report_trfc_byte_count = 0
-                report_served_count = 0
+                report_work_cycle_count = 0
+                report_read_cycle_count = 0
                 report_queueing_delay = 0
                 report_last_cycle = cycle
                 report_ts = time.time()
@@ -242,10 +300,7 @@ class Simulator:
     def _print_report(report_values):
         formatted_values = list()
         for key, val in report_values.items():
-            if val > 999 or val < 0.01:
-                val = ns(val, gnu=True, format="%.1f")
-            else:
-                val = "%.3f" % val
+            val = misc.hnum(val)
             formatted_values.append("%s=%s" % (key, str(val)))
         print ', '.join(formatted_values)
 
@@ -258,6 +313,6 @@ class Simulator:
 
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
-    sim = Simulator(trace_day=conf.trace_day, trace_ts=130000, clock_freq=1 * 10 ** 6, N=8, Q=8,
-                    hash_func=params.hash_cityhash32, key_func=params.key_ipsrc, read_chunk=0)
-    sim.run()
+    sim = Simulator(trace_day=conf.trace_day, trace_ts=130000, clock_freq=0, N=8, Q=8,
+                    hash_func=params.hash_crc16, key_func=params.key_ipsrc16, read_chunk=0, line_rate_util=1.0)
+    sim.run(debug=True)

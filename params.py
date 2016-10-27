@@ -12,9 +12,10 @@ crc16c = CRC16.CRC16()
 crc32c = CRC32.CRC32()
 
 N_values = [8]
-Q_values = range(8, 17)
+Q_values = range(2, 16)
 clock_freqs = [0, 1 * 10 ** 6, 1.2 * 10 ** 6, 1.5 * 10 ** 6]
 read_chunks = [0, 40, 128, 256]
+clock_read_speedup = [(0, 0, 0), (0, 40, 0), (0, 80, 0), (10 ** 9, 80, 0)]
 traces = conf.timestamps[0:3]
 
 
@@ -36,6 +37,21 @@ def hash_crc32(key):
 
 def key_ipsrc(pkt):
     pkt.lookup_key = pkt.ipsrc()
+    pkt.update_key = pkt.lookup_key
+
+
+def key_ipsrc8(pkt):
+    pkt.lookup_key = pkt.buf_slice(0, 1)
+    pkt.update_key = pkt.lookup_key
+
+
+def key_ipsrc16(pkt):
+    pkt.lookup_key = pkt.buf_slice(0, 2)
+    pkt.update_key = pkt.lookup_key
+
+
+def key_ipsrc24(pkt):
+    pkt.lookup_key = pkt.buf_slice(0, 2)
     pkt.update_key = pkt.lookup_key
 
 

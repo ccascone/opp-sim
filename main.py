@@ -5,7 +5,7 @@ import os
 import params
 from simulator import Simulator
 
-MAX_PROCESS = 2
+MAX_PROCESS = 10
 AVG_SIM_DURATION = 200  # seconds
 
 

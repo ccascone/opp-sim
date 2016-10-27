@@ -1,82 +1,96 @@
-from fifo import Fifo as Queue
+from array import array
+from collections import deque
 
 DEBUG = False
 
 
+class DummyScheduler:
+    def __init__(self, Q, N, hash_func):
+        self.digests = dict()
+        self.queues = [[] for _ in range(Q)]
+        self.queues_sum_size = 0
+        pass
+
+    def accept(self, pkt):
+        return True
+
+    def execute_tick(self):
+        return False
+
+    def queue_occupancy(self):
+        return 0, 0
+
+    def digest_stats(self):
+        return []
+
+
 class Scheduler:
     def __init__(self, Q, N, hash_func):
-        assert Q >= N, "Q must be greater or equal to N"
+        # assert Q >= N, "Q must be greater or equal to N"
         self.Q = Q
         self.N = N
         self.hash_func = hash_func
-        self.queues = [Queue() for _ in range(Q)]
+        self.queues = [deque(array('h', [])) for _ in range(Q)]
         self.hols = [None] * Q
-        self.locked_keys = [None] * N
+        self.locked_digests = deque([None] * N)
+        self.range_Q = [i for i in range(self.Q)]
         self.first_priority = 0
-        self.last_packet = None
-        # Digests are cached for speed.
-        self.digests = {}
+        # Cache digests for speed and reporting.
+        self.digests = dict()
+        self.locked_count = 0
+        self.queues_sum_size = 0
 
     def accept(self, pkt):
         """
         Accept a new packet to be enqued in one of the flow queues.
-        :param pkt: a packet
-        :return: True if packet can be accepted, False otherwise (e.g. queues are full)
+        :param pkt: a SimPacket
         """
         # Enqueue ingress packet by its lookup key.
-        self.queues[self._digest(pkt.lookup_key)].put(pkt)
-        # TODO if queues have limited size we could return false
-        return True
+        q = self._digest(pkt.lookup_key)
+        if self.hols[q] is None:
+            self.hols[q] = self._digest(pkt.update_key)
+        else:
+            self.queues[q].append(self._digest(pkt.update_key))
+        self.queues_sum_size += 1
 
     def execute_tick(self):
         """
         Executes a clock tick. This is the main scheduler execution.
         :return: True if a packet was served, False if not (i.e. idle cycle)
         """
-        # Extract head of line (HOL) packets from queues...
-        # ...if there's not already one blocking.
-        for q in range(self.Q):
-            if self.hols[q] is None:
-                try:
-                    self.hols[q] = self.queues[q].get()
-                except IndexError:
-                    pass
 
-        # Remove last key.
-        self.locked_keys.pop()
+        if self.queues_sum_size == 0 and self.locked_count == 0:
+            # Queues and pipeline are empty.
+            return -1
 
         # Update round robin priority.
         self.first_priority = (self.first_priority + 1) % self.Q
 
-        for i in range(self.Q):
+        # Remove last digest form the pipeline.
+        if self.locked_digests.pop():
+            # Extracted value is not None.
+            self.locked_count -= 1
+
+        for i in self.range_Q:
             # Round robin priority.
             q = (i + self.first_priority) % self.Q
-            # Get head of line packet.
-            pkt = self.hols[q]
-            # Evaluate arbitration condition.
-            if pkt is not None and q not in self.locked_keys:
-                # Free the HOL spot for this queue.
-                self.hols[q] = None
-                self._serve(pkt)
-                # Break the round robin loop.
-                return True
+            # !! Scheduler arbitration condition !!
+            if self.hols[q] is not None and q not in self.locked_digests:
+                update_digest = self.hols[q]
+                # Update the hol spot for this queue.
+                try:
+                    self.hols[q] = self.queues[q].popleft()
+                except IndexError:
+                    # Queue empty.
+                    self.hols[q] = None
+                self.locked_digests.appendleft(update_digest)
+                self.queues_sum_size -= 1
+                self.locked_count += 1
+                return 1
 
         # IDLE!
-        self._serve(None)
-        return False
-
-    def _serve(self, pkt):
-        """
-        Serve a packet, push it at the beginning of the processing pipeline.
-        :param pkt: a packet or None
-        :return: None
-        """
-        if pkt is None:
-            # Insert None at beginning of the list....
-            self.locked_keys.insert(0, None)
-        else:
-            # Insert hash of the update key at the beginning of the list.
-            self.locked_keys.insert(0, self._digest(pkt.update_key))
+        self.locked_digests.appendleft(None)
+        return 0
 
     def _digest(self, key):
         try:
@@ -85,10 +99,6 @@ class Scheduler:
             digest = self.hash_func(key) % self.Q
             self.digests[key] = digest
             return digest
-
-    def queue_occupancy(self):
-        sizes = [x.qsize() for x in self.queues]
-        return sum(sizes), max(sizes)
 
     def digest_stats(self):
         digest_count = float(len(self.digests))

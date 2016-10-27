@@ -3,9 +3,8 @@ import threading
 import time
 from Queue import Queue, Empty
 
-import os
-
 from conf import *
+from misc import was_downloaded
 
 max_parallel_download = 5
 threads = Queue()
