@@ -32,11 +32,13 @@ def parse_trace_fname(fname):
         ext = ''
     return pieces[1][-1], date[0], date[1], ext
 
-
-md5s = {}
-
-
 # Read MD5 (to avoid red-downloading the same file)
 def read_md5_lines():
     with open(trace_dir + '/' + "md5.md5") as f:
         return f.readlines()
+
+md5s = {}
+
+for line in read_md5_lines():
+    pieces = line.rstrip().split(" ")
+    md5s[pieces[0]] = pieces[1]
