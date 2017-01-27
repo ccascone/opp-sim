@@ -1,7 +1,10 @@
 import sys
+import os
 import threading
 import time
 from Queue import Queue, Empty
+
+from os.path import isfile
 
 from conf import *
 from misc import was_downloaded
