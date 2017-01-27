@@ -1,10 +1,5 @@
-import inspect
-from random import shuffle
-
-import jenkins
 from PyCRC import CRC16
 from PyCRC import CRC32
-from cityhash import CityHash32
 
 import conf
 
@@ -22,14 +17,6 @@ traces = conf.timestamps[0:3]
 def hash_perfect(key):
     """Perfect hash with no collissions"""
     return key
-
-
-def hash_jenkins(key):
-    return jenkins.hashlittle(key)
-
-
-def hash_cityhash32(key):
-    return CityHash32(key)
 
 
 def hash_crc16(key):
