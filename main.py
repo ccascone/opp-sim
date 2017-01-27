@@ -2,11 +2,12 @@ from multiprocessing import Pool, Value
 
 import os
 
+import sim_params
 import params
 from simulator import Simulator
 
-MAX_PROCESS = 10
-AVG_SIM_DURATION = 200  # seconds
+MAX_PROCESS = 4
+AVG_SIM_DURATION = sim_params.max_samples + 10  # seconds
 
 
 def print_eta(n):
@@ -32,7 +33,7 @@ if __name__ == '__main__':
     count = Value('i', 0)
     pool = Pool(MAX_PROCESS)
 
-    param_list = params.gen_params()
+    param_list = sim_params.generate_param_dicts(True)
     num_simulators = len(param_list)
 
     print "Will execute %d simulations (pid %d)..." % (num_simulators, os.getpgid(0))

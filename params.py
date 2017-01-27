@@ -19,6 +19,11 @@ clock_read_speedup = [(0, 0, 0), (0, 40, 0), (0, 80, 0), (10 ** 9, 80, 0)]
 traces = conf.timestamps[0:3]
 
 
+def hash_perfect(key):
+    """Perfect hash with no collissions"""
+    return key
+
+
 def hash_jenkins(key):
     return jenkins.hashlittle(key)
 
@@ -33,6 +38,11 @@ def hash_crc16(key):
 
 def hash_crc32(key):
     return crc32c.calculate(key)
+
+
+def key_const(pkt):
+    pkt.lookup_key = '1'
+    pkt.update_key = '1'
 
 
 def key_ipsrc(pkt):
@@ -98,30 +108,3 @@ def key_proto_dport(pkt):
 def key_proto_sport(pkt):
     pkt.lookup_key = pkt.sport() + pkt.sport()
     pkt.update_key = pkt.lookup_key
-
-
-def gen_params():
-    me = __import__(inspect.getmodulename(__file__))
-    functions = inspect.getmembers(me, inspect.isfunction)
-    params = []
-    for trace_ts in traces:
-        for Q in Q_values:
-            for N in N_values:
-                for hash_func in filter(lambda f: "hash_" in f[0], functions):
-                    for clock_freq in clock_freqs:
-                        for read_chunk in read_chunks:
-                            for key_func in filter(lambda f: "key_" in f[0], functions):
-                                params.append(dict(trace_day=conf.trace_day,
-                                                   trace_ts=trace_ts,
-                                                   clock_freq=clock_freq,
-                                                   Q=Q,
-                                                   N=N,
-                                                   hash_func=hash_func[1],
-                                                   key_func=key_func[1],
-                                                   read_chunk=read_chunk))
-    shuffle(params)
-    return params
-
-
-if __name__ == '__main__':
-    print len(gen_params())

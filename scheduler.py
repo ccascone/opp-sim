@@ -3,6 +3,9 @@ from collections import deque
 
 DEBUG = False
 
+SKIP = -1
+WORK, EMPTY, STALL, HAZARD = range(4)
+
 
 class DummyScheduler:
     def __init__(self, Q, N, hash_func):
@@ -24,7 +27,7 @@ class DummyScheduler:
         return []
 
 
-class Scheduler:
+class OPPScheduler:
     def __init__(self, Q, N, hash_func):
         # assert Q >= N, "Q must be greater or equal to N"
         self.Q = Q
@@ -39,6 +42,7 @@ class Scheduler:
         self.digests = dict()
         self.locked_count = 0
         self.queues_sum_size = 0
+        self.last_result = -1
 
     def accept(self, pkt):
         """
@@ -47,6 +51,7 @@ class Scheduler:
         """
         # Enqueue ingress packet by its lookup key.
         q = self._digest(pkt.lookup_key)
+        # Head of line, otherwise enqueue
         if self.hols[q] is None:
             self.hols[q] = self._digest(pkt.update_key)
         else:
@@ -54,28 +59,38 @@ class Scheduler:
         self.queues_sum_size += 1
 
     def execute_tick(self):
+        self.last_result = self._execute_tick()
+        return self.last_result
+
+    def _execute_tick(self):
         """
         Executes a clock tick. This is the main scheduler execution.
         :return: True if a packet was served, False if not (i.e. idle cycle)
         """
+        # Remove last digest form the pipeline.
+        if self.locked_digests.pop():
+            # Extracted value is not None
+            self.locked_count -= 1
 
-        if self.queues_sum_size == 0 and self.locked_count == 0:
-            # Queues and pipeline are empty.
-            return -1
+        if self.queues_sum_size == 0:
+            # No packets to serve.
+            self.locked_digests.appendleft(None)
+            if self.locked_count == 0:
+                return SKIP
+            else:
+                return EMPTY
+
+        # There are packets that are waiting to be served...
 
         # Update round robin priority.
         self.first_priority = (self.first_priority + 1) % self.Q
-
-        # Remove last digest form the pipeline.
-        if self.locked_digests.pop():
-            # Extracted value is not None.
-            self.locked_count -= 1
 
         for i in self.range_Q:
             # Round robin priority.
             q = (i + self.first_priority) % self.Q
             # !! Scheduler arbitration condition !!
             if self.hols[q] is not None and q not in self.locked_digests:
+                # Found a packet that can be safelly served, with no concurrency hazards
                 update_digest = self.hols[q]
                 # Update the hol spot for this queue.
                 try:
@@ -86,17 +101,81 @@ class Scheduler:
                 self.locked_digests.appendleft(update_digest)
                 self.queues_sum_size -= 1
                 self.locked_count += 1
-                return 1
+                return WORK
 
-        # IDLE!
+        # Any packet could be served, this is a stall.
         self.locked_digests.appendleft(None)
-        return 0
+        return STALL
 
     def _digest(self, key):
         try:
             return self.digests[key]
         except KeyError:
             digest = self.hash_func(key) % self.Q
+            self.digests[key] = digest
+            return digest
+
+    def digest_stats(self):
+        digest_count = float(len(self.digests))
+        return [sum(x == q for x in self.digests.values()) / digest_count for q in range(self.Q)]
+
+
+class HazardDetector:
+    def __init__(self, Q, N, hash_func):
+        # assert Q >= N, "Q must be greater or equal to N"
+        self.Q = Q
+        self.N = N
+        self.hash_func = hash_func
+        self.locked_digests = deque([None] * N)
+        # Cache digests for speed and reporting.
+        self.digests = dict()
+        self.the_pkt = None
+        self.last_result = -1
+
+    def accept(self, pkt):
+        """
+        Accept a new packet to be enqued in one of the flow queues.
+        :param pkt: a SimPacket
+        """
+        self.the_pkt = pkt
+
+    def execute_tick(self):
+        self.last_result = self._execute_tick()
+        return self.last_result
+
+    def _execute_tick(self):
+        """
+        Executes a clock tick. This is the main scheduler execution.
+        :return: True if a packet was served, False if not (i.e. idle cycle)
+        """
+
+        # Remove last digest form the pipeline.
+        self.locked_digests.pop()
+
+        if self.the_pkt is None:
+            # No packets to serve.
+            key_to_lock = None
+            result = EMPTY
+        else:
+            q = self._digest(self.the_pkt.lookup_key)
+            key_to_lock = self._digest(self.the_pkt.update_key)
+            if q in self.locked_digests:
+                result = HAZARD
+            else:
+                result = WORK
+
+        self.locked_digests.appendleft(key_to_lock)
+        self.the_pkt = None
+        return result
+
+    def _digest(self, key):
+        try:
+            return self.digests[key]
+        except KeyError:
+            if self.Q > 0:
+                digest = self.hash_func(key) % self.Q
+            else:
+                digest = self.hash_func(key)
             self.digests[key] = digest
             return digest
 

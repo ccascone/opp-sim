@@ -3,7 +3,7 @@ caida
 !caida/md5.md5
 .idea
 *.pyc
-results/*.p
-results/*.lock
+results/*
+figs/*
 simulator.log
 parse_report.txt
