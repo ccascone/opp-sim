@@ -75,8 +75,14 @@ class Simulator:
 
     def _run(self):
         if not self.debug and os.path.isfile(self.results_fname):
-            self._print("WARNING: simulation aborted, result already exists for this configuration")
-            return
+            with open(self.results_fname, "rb") as f:
+                try:
+                    pickle.load(f)
+                    self._print("WARNING: simulation aborted, result already exists for this configuration")
+                    return
+                except EOFError:
+                    # Can't read file, do sim again
+                    os.remove(self.results_fname)
 
         self._print("Running simulator %s" % self.label, False)
         start_time = time.time()
