@@ -3,7 +3,7 @@ from scheduler import HazardDetector, OPPScheduler
 from params import *
 from copy import copy
 
-max_samples = 3
+max_samples = 30
 
 wc = dict(clock_freq=0, read_chunk=0, line_rate_util=1)
 rmt = dict(clock_freq=10 ** 9, read_chunk=80, line_rate_util=1)
@@ -17,14 +17,14 @@ sim_groups = {
         dict(pipe=wc, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=0, hashf=hash_perfect),
     "hazard-wc-min-hash":
         dict(pipe=wc, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=[4, 8], hashf=hash_crc16),
-    # "hazard-rmt-p-hash":
-    #     dict(pipe=rmt, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=0, hashf=hash_perfect),
-    # "hazard-rmt-min-hash":
-    #     dict(pipe=rmt, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=[4, 8], hashf=hash_crc16),
-    # "opp-wc":
-    #     dict(pipe=wc, sched=OPPScheduler, key=keys_worst, N=range(1, 17), Q=[1, 4, 8], hashf=hash_crc16),
-    # "opp-rmt":
-    #     dict(pipe=wc, sched=OPPScheduler, key=keys_worst, N=16, Q=range(1, 9), hashf=hash_crc16),
+    "hazard-rmt-p-hash":
+        dict(pipe=rmt, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=0, hashf=hash_perfect),
+    "hazard-rmt-min-hash":
+        dict(pipe=rmt, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=[4, 8], hashf=hash_crc16),
+    "opp-wc":
+        dict(pipe=wc, sched=OPPScheduler, key=keys_worst, N=range(1, 17), Q=[1, 4, 8], hashf=hash_crc16),
+    "opp-rmt":
+        dict(pipe=rmt, sched=OPPScheduler, key=keys_worst, N=[8, 16, 32], Q=range(1, 9), hashf=hash_crc16),
 }
 
 
