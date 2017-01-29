@@ -75,6 +75,7 @@ class Simulator:
 
     def _run(self):
         if not self.debug and os.path.isfile(self.results_fname):
+
             with open(self.results_fname, "rb") as f:
                 try:
                     pickle.load(f)
@@ -97,7 +98,8 @@ class Simulator:
                               samples=self.samples,
                               digest_stats=self.scheduler.digest_stats(),
                               line_rate=self.line_rate)
-                pickle.dump(result, open(self.results_fname, 'wb'))
+                with open(self.results_fname, 'wb') as f:
+                    pickle.dump(result, f)
         except SimException as e:
             self._print("*** ERROR: %s" % e.message)
         except KeyboardInterrupt:
@@ -111,7 +113,8 @@ class Simulator:
         if os.path.isfile(lock_fname):
             self._print("*** ERROR: simulation aborted, another simulator is running for this configuration")
             return
-        open(lock_fname, 'w').write("locked")
+        with open(lock_fname, 'w') as f:
+            f.write("locked")
         lock.release()
         self.threaded = threaded
         self.debug = debug
@@ -128,10 +131,15 @@ class Simulator:
         if not os.path.isfile(fname_a) or not os.path.isfile(fname_b):
             raise SimException("Missing trace file for direction A or B")
 
-        self._print('Reading %s...' % fname_a, False)
-        dump_a = open(fname_a, 'rb').read()
-        self._print('Reading %s...' % fname_b, False)
-        dump_b = open(fname_b, 'rb').read()
+        try:
+            with open(fname_a, 'rb') as fa:
+                self._print('Reading %s...' % fname_a, False)
+                dump_a = fa.read()
+            with open(fname_b, 'rb') as fb:
+                self._print('Reading %s...' % fname_b, False)
+                dump_b = open(fname_b, 'rb').read()
+        except IOError:
+            raise SimException("Unable to read trace file")
 
         tot_pkt_a, rem_a = divmod(len(dump_a), 32.0)
         tot_pkt_b, rem_b = divmod(len(dump_b), 32.0)
@@ -326,7 +334,8 @@ class Simulator:
             if self.debug:
                 print msg
             else:
-                open('simulator.log', 'a').write(msg + "\n")
+                with open('simulator.log', 'a') as f:
+                    f.write(msg + "\n")
 
     @staticmethod
     def _print_report(report_values):
