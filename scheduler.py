@@ -26,12 +26,16 @@ class DummyScheduler:
     def digest_stats(self):
         return []
 
+    def key_count(self):
+        return 0
+
 
 class OPPScheduler:
-    def __init__(self, Q, N, hash_func):
+    def __init__(self, Q, W, N, hash_func):
         # assert Q >= N, "Q must be greater or equal to N"
         self.Q = Q
         self.N = N
+        self.W = W
         self.hash_func = hash_func
         self.queues = [deque(array('h', [])) for _ in range(Q)]
         self.hols = [None] * Q
@@ -39,7 +43,7 @@ class OPPScheduler:
         self.range_Q = [i for i in range(self.Q)]
         self.first_priority = 0
         # Cache digests for speed and reporting.
-        self.digests = dict()
+        self.digests = {self.Q: {}, self.W: {}}
         self.locked_count = 0
         self.queues_sum_size = 0
         self.last_result = -1
@@ -50,12 +54,13 @@ class OPPScheduler:
         :param pkt: a SimPacket
         """
         # Enqueue ingress packet by its lookup key.
-        q = self._digest(pkt.lookup_key)
+        q = self._digest(pkt.lookup_key, self.Q)
+        w = self._digest(pkt.update_key, self.W)
         # Head of line, otherwise enqueue
         if self.hols[q] is None:
-            self.hols[q] = self._digest(pkt.update_key)
+            self.hols[q] = w
         else:
-            self.queues[q].append(self._digest(pkt.update_key))
+            self.queues[q].append(w)
         self.queues_sum_size += 1
 
     def execute_tick(self):
@@ -89,16 +94,16 @@ class OPPScheduler:
             # Round robin priority.
             q = (i + self.first_priority) % self.Q
             # !! Scheduler arbitration condition !!
-            if self.hols[q] is not None and q not in self.locked_digests:
+            w = self.hols[q]
+            if w is not None and w not in self.locked_digests:
                 # Found a packet that can be safelly served, with no concurrency hazards
-                update_digest = self.hols[q]
                 # Update the hol spot for this queue.
                 try:
                     self.hols[q] = self.queues[q].popleft()
                 except IndexError:
                     # Queue empty.
                     self.hols[q] = None
-                self.locked_digests.appendleft(update_digest)
+                self.locked_digests.appendleft(w)
                 self.queues_sum_size -= 1
                 self.locked_count += 1
                 return WORK
@@ -107,22 +112,29 @@ class OPPScheduler:
         self.locked_digests.appendleft(None)
         return STALL
 
-    def _digest(self, key):
+    def _digest(self, key, space):
         try:
-            return self.digests[key]
+            return self.digests[space][key]
         except KeyError:
-            digest = self.hash_func(key) % self.Q
-            self.digests[key] = digest
+            digest = self.hash_func(key) % space
+            self.digests[space][key] = digest
             return digest
 
-    def digest_stats(self):
-        digest_count = float(len(self.digests))
-        return [sum(x == q for x in self.digests.values()) / digest_count for q in range(self.Q)]
+    def digest_stats(self, space=None):
+        # FIXME: should report for Q or W?
+        if not space:
+            space = self.Q
+        digest_count = float(len(self.digests[space]))
+        return [sum(x == s for x in self.digests[space].values()) / digest_count for s in range(space)]
+
+    def key_count(self):
+        return len(self.digests[self.Q])
 
 
 class HazardDetector:
-    def __init__(self, Q, N, hash_func):
+    def __init__(self, Q, W, N, hash_func):
         # assert Q >= N, "Q must be greater or equal to N"
+        assert Q == W
         self.Q = Q
         self.N = N
         self.hash_func = hash_func
@@ -182,3 +194,6 @@ class HazardDetector:
     def digest_stats(self):
         digest_count = float(len(self.digests))
         return [sum(x == q for x in self.digests.values()) / digest_count for q in range(self.Q)]
+
+    def key_count(self):
+        return len(self.digests)

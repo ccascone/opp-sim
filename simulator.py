@@ -20,7 +20,7 @@ class SimException(Exception):
 
 
 class Simulator:
-    def __init__(self, trace_day, trace_ts, N, Q, sched, hashf, key, clock_freq=0, read_chunk=0,
+    def __init__(self, trace_day, trace_ts, N, Q, sched, hashf, key, W=None, clock_freq=0, read_chunk=0,
                  line_rate_util=0.0, sim_group='all', sim_name=None, max_samples=0):
         """
         Creates a new simulator instance.
@@ -35,8 +35,12 @@ class Simulator:
                             0 to read the whole packet in 1 tick.
         :param line_rate_util:
         """
+
+        if W is None:
+            W = Q
+
         # type: (basestring, int, int, int, function, function, int, int, int) -> None
-        self.sim_params = OrderedDict(trace_day=trace_day, trace_ts=trace_ts, N=N, Q=Q, clock_rate=clock_freq,
+        self.sim_params = OrderedDict(trace_day=trace_day, trace_ts=trace_ts, N=N, Q=Q, W=W, clock_rate=clock_freq,
                                       sched_class=sched.__name__, key_func=key.__name__,
                                       hash_func=hashf.__name__, read_chunk=read_chunk, sim_util=line_rate_util)
         self.label = '-'.join(map(str, self.sim_params.values()))
@@ -53,9 +57,10 @@ class Simulator:
         self.clock_freq = clock_freq  # Ghz
         self.N = N
         self.Q = Q
+        self.W = W
         self.hash_func = hashf
         self.key_func = key
-        self.scheduler = sched(Q, N, hashf)
+        self.scheduler = sched(N=self.N, Q=self.Q, W=self.W, hash_func=self.hash_func)
         self.read_chunk = float(read_chunk)
         assert 0 <= line_rate_util <= 1
         self.sim_util = float(line_rate_util)
@@ -137,7 +142,7 @@ class Simulator:
                 dump_a = fa.read()
             with open(fname_b, 'rb') as fb:
                 self._print('Reading %s...' % fname_b, False)
-                dump_b = open(fname_b, 'rb').read()
+                dump_b = fb.read()
         except IOError:
             raise SimException("Unable to read trace file")
 
@@ -294,7 +299,7 @@ class Simulator:
                                             sched_queues_avg=(sum(queue_sizes) / float(self.Q) if self.Q else 0),
                                             sched_queues_max=max(queue_sizes),
                                             sched_queues_min=min(queue_sizes),
-                                            sched_keys_count=len(self.scheduler.digests),
+                                            sched_keys_count=self.scheduler.key_count(),
                                             trfc_bitrate=trfc_bitrate,
                                             trfc_pkt_rate=trfc_pkt_rate,
                                             cycle_util=util,
@@ -354,7 +359,7 @@ class Simulator:
 
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
-    sim = Simulator(trace_day=conf.trace_day, trace_ts=130000, clock_freq=10**9, N=8, Q=4,
-                    sched=scheduler.OPPScheduler,
-                    hashf=params.hash_crc16, key=params.key_proto_sport, read_chunk=80, line_rate_util=1)
+    sim = Simulator(trace_day=conf.trace_day, trace_ts=130000, N=10, Q=2, W=8,
+                    sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_proto_sport,
+                    clock_freq=0, read_chunk=0, line_rate_util=1)
     sim.run(debug=True)
