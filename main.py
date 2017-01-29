@@ -1,13 +1,12 @@
 from multiprocessing import Pool, Value
+from random import shuffle
 
 import os
 
 import sim_params
-import params
-from random import shuffle
 from simulator import Simulator
 
-MAX_PROCESS = 2
+MAX_PROCESS = 1
 AVG_SIM_DURATION = sim_params.max_samples + 10  # seconds
 
 
@@ -34,7 +33,7 @@ if __name__ == '__main__':
     count = Value('i', 0)
     pool = Pool(MAX_PROCESS)
 
-    param_list = sim_params.generate_param_dicts(True)
+    param_list = sim_params.generate_param_dicts()
     num_simulators = len(param_list)
 
     print "Will execute %d simulations (pid %d)..." % (num_simulators, os.getpgid(0))

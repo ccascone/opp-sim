@@ -40,10 +40,11 @@ class Simulator:
             W = Q
 
         # type: (basestring, int, int, int, function, function, int, int, int) -> None
-        self.sim_params = OrderedDict(trace_day=trace_day, trace_ts=trace_ts, N=N, Q=Q, W=W, clock_rate=clock_freq,
-                                      sched_class=sched.__name__, key_func=key.__name__,
-                                      hash_func=hashf.__name__, read_chunk=read_chunk, sim_util=line_rate_util)
-        self.label = '-'.join(map(str, self.sim_params.values()))
+        self.sim_params = OrderedDict(day=trace_day, ts=trace_ts, sched=sched.__name__,
+                                      N=N, Q=Q, W=W,
+                                      key=key.__name__, hash=hashf.__name__,
+                                      clock=clock_freq, read_chunk=read_chunk, util=line_rate_util)
+        self.label = '-'.join(["%s=%s" % (k, str(v)) for k, v in self.sim_params.items()])
 
         if sim_name is not None:
             self.label = sim_name
