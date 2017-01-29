@@ -1,14 +1,18 @@
 import glob
-import subprocess
+import pickle
+from sys import stderr
 
 import os
-from sys import stderr
-import pickle
 
 import sim_params
+from misc import hnum
+
+MAX_VAL = 1
+META_KEYS = ['cycle_util']
 
 translator = dict(
     sched_quota_hazard="% concurrency hazard",
+    sched_thrpt="Pipeline throughput",
     key_5tuple="5tuple",
     key_ipsrc_ipdst="ipsrc,ipdst",
     key_ipsrc="ipsrc",
@@ -16,7 +20,10 @@ translator = dict(
     key_proto_sport="proto,sport",
     key_const="* (constant)",
     pipe_wc="Worst case (100% util with minimum size packets)",
-    pipe_rmt="RMT pipeline with 98% util"
+    pipe_rmt="RMT pipeline",
+    cycle_util="util",
+    key_func="Flow key",
+    N="N (pipeline depth)"
 )
 
 
@@ -29,22 +36,35 @@ def ts(word):
 
 
 result_groups = {
-    'hazard-wc-p-hash': dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key_func'),
-    'hazard-wc-min-hash': dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key_func'),
+    'hazard-wc-p-hash':
+        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key_func'),
+    'hazard-wc-min-hash':
+        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key_func'),
+    "hazard-rmt-p-hash":
+        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key_func'),
+    "hazard-rmt-min-hash":
+        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key_func'),
+    "opp-wc":
+        dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='key_func'),
+    "opp-rmt-stress":
+        dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='key_func')
 }
 
 
 def avg(values):
-    return sum(values) / len(values)
+    return sum([min(v, MAX_VAL) for v in values]) / len(values)
 
 
 def err(values):
+    # TODO
     return 0
 
 
 def do_pickle_parse(sim_group):
     conf = result_groups[sim_group]
     parsed_results = {}
+    parsed_metadatas = {}
+
     for filename in glob.glob('results/%s/*.p' % sim_group):
 
         with open(filename, "rb") as f:
@@ -54,13 +74,14 @@ def do_pickle_parse(sim_group):
                 print >> stderr, 'Error while reading', filename
                 continue
 
-        sim_params = results['params']
-        sim_samples = results['samples']
-        line_name = sim_params[conf['line_param']]
-        y_values = sim_samples[conf['y_sample']]
+        params = results['params']
+        samples = results['samples']
 
-        z = sim_params[conf['z_param']]
-        x = float(sim_params[conf['x_param']])
+        line_name = params[conf['line_param']]
+        y_values = samples[conf['y_sample']]
+
+        z = params[conf['z_param']]
+        x = float(params[conf['x_param']])
 
         if z not in parsed_results:
             parsed_results[z] = {}
@@ -70,16 +91,15 @@ def do_pickle_parse(sim_group):
 
         assert line_name not in parsed_results[z][x]
 
-        parsed_results[z][x][line_name] = dict()
+        parsed_results[z][x][line_name] = dict(avg=avg(y_values), err=err(y_values))
 
-        parsed_results[z][x][line_name]['avg'] = avg(y_values)
-        parsed_results[z][x][line_name]['err'] = err(y_values)
+        parsed_metadatas[z] = {k: dict(avg=avg(samples[k]), err=err(samples[k])) for k in samples}
 
-    return parsed_results
+    return parsed_results, parsed_metadatas
 
 
 def parse_result_to_file(sim_group):
-    results = do_pickle_parse(sim_group)
+    results, metadatas = do_pickle_parse(sim_group)
     conf = result_groups[sim_group]
 
     line_label = conf['line_param']
@@ -88,76 +108,93 @@ def parse_result_to_file(sim_group):
     z_label = conf['z_param']
 
     for z in results:
-        output = ""
-        output += "#%s=%s\n" % (z_label, z)
-        lines = []
+
         x_values = sorted(results[z].keys())
+
         line_names = set()
         for x in x_values:
             line_names.update(results[z][x].keys())
+        # Sort line names per translation
         line_names = list(sorted(line_names, key=ts))
+
+        # First row with column names
         data = [map(ts, ["# " + x_label] + line_names)]
-        # output += "#%s\n" % "\t".join(map(str, [x_label] + line_names))
+
+        y_min = 1
+        y_max = 0
+
         for x in x_values:
-            avg_values = [0] * len(line_names)
-            err_values = [0] * len(line_names)
+            avg_values = ['?'] * len(line_names)
+            err_values = ['?'] * len(line_names)
             for line in line_names:
-                avg_val = "?"
-                err_val = "?"
                 if line in results[z][x]:
                     avg_val = results[z][x][line]['avg']
                     err_val = results[z][x][line]['err']
+                    avg_values[line_names.index(line)] = avg_val
+                    err_values[line_names.index(line)] = err_val
+                    y_min = min(y_min, avg_val)
+                    y_max = max(y_max, avg_val)
                 else:
-                    print >> stderr, "Missing point %s:%s" % (x, line)
-
-                avg_values[line_names.index(line)] = avg_val
+                    print >> stderr, "Missing point %s:%s in %s with %s=%s" % (x, line, sim_group, z_label, z)
 
             data.append(map(str, [x] + avg_values))
-
-        if not os.path.exists("plot_data"):
-            os.makedirs("plot_data")
 
         dat_fname = sim_group + "_%s=%s.dat" % (z_label, z)
         pic_fname = sim_group + "_%s=%s.pdf" % (z_label, z)
 
-        pipe = sim_params.sim_groups[sim_group]['pipe']
-        pipe_type = "pipe_wc" if pipe["read_chunk"] == 0 else "pipe_rmt"
-
-        with open("plot_data/" + dat_fname, "w") as f:
-            print >> f, "# %s" % ts(sim_group)
-            print >> f, "# %s=%s" % (ts(z_label), ts(z))
-            print >> f, "# %s" % ts(y_label)
-            col_width = max(len(word) for row in data for word in row) + 2  # padding
-            for row in data:
-                print >> f, "".join(word.ljust(col_width) for word in row)
+        if not os.path.exists("plot_data"):
+            os.makedirs("plot_data")
 
         if os.path.isfile("plot_data/" + pic_fname):
             os.remove("plot_data/" + pic_fname)
 
-        descr = "%s\\n%s=%s" % (ts(pipe_type), ts(z_label), z)
+        # Write gnuplot dat file
+        with open("plot_data/" + dat_fname, "w") as f:
 
-        with open("plot_data/plot.script", "a") as plot_script:
-            print >> plot_script, "\nset output \"%s\"" % pic_fname
-            print >> plot_script, "set title \"%s\"" % descr
-            print >> plot_script, "set xlabel \"%s\"" % ts(x_label)
-            print >> plot_script, "set ylabel \"%s\"" % ts(y_label)
-            usings = ["u 1:%d t \"%s\"" % (i + 2, ts(line_names[i])) for i in range(len(line_names))]
+            print >> f, "# %s" % ts(sim_group)
+            print >> f, "# %s=%s" % (ts(z_label), ts(z))
+            print >> f, "# %s" % ts(y_label)
+
+            # Print nicely, aligned in columns
+            col_width = max(len(word) for row in data for word in row) + 2  # padding
+            for row in data:
+                print >> f, "".join(word.ljust(col_width) for word in row)
+
+        pipe_conf = sim_params.sim_groups[sim_group]['pipe']
+        pipe_name = "pipe_wc" if pipe_conf["read_chunk"] == 0 else "pipe_rmt"
+
+        metas_str = ", ".join(["%s=%s" % (ts(k), hnum(metadatas[z][k]['avg'])) for k in META_KEYS])
+        title = "%s - %s=%s (%s)" % (ts(pipe_name), ts(z_label), z, metas_str)
+
+        # Write gnuplot script
+        with open("plot_data/plot.script", "a") as ps:
+
+            print >> ps, "\nset output '%s'" % pic_fname
+
+            print >> ps, "set key outside title '%s' box" % ts(line_label)
+            print >> ps, "set title  '%s'" % title
+            print >> ps, "set xlabel '%s'" % ts(x_label)
+            print >> ps, "set ylabel '%s'" % ts(y_label)
+
+            usings = ["u 1:%d t '%s'" % (i + 2, ts(line_names[i])) for i in range(len(line_names))]
             using_str = ", \\\n\t'' ".join(usings)
-            print >> plot_script, "plot \"%s\" %s" % (dat_fname, using_str)
+
+            print >> ps, "plot '%s' %s" % (dat_fname, using_str)
+
+
+def main():
+    if not os.path.exists("plot_data"):
+        os.makedirs("plot_data")
+
+    with open("plot_data/plot.script", "w") as ps:
+        print >> ps, "# gnuplot script"
+        print >> ps, "set terminal pdf linewidth 3 size 4in,2.5in"
+        print >> ps, "set autoscale"
+        print >> ps, "set grid"
+
+    for group in result_groups:
+        parse_result_to_file(group)
 
 
 if __name__ == '__main__':
-
-    if os.path.isfile("plot_data/plot.script"):
-        os.remove("plot_data/plot.script")
-
-    with open("plot_data/plot.script", "w") as plot_script:
-        print >> plot_script, """ # gnuplot script
-    set terminal pdf linewidth 3 size 4in,2.5in
-    set key outside title "Flow key" box
-    set autoscale
-    set grid
-    """
-
-    for sim_group in result_groups:
-        parse_result_to_file(sim_group)
+    main()

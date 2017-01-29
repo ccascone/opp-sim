@@ -62,6 +62,8 @@ def start_download(fname):
 
 if __name__ == '__main__':
 
+    assert len(caida_user) + len(caida_passwd) > 0, "CAIDA credentials not set, see conf.py"
+
     curr_dir = os.path.dirname(os.path.realpath(__file__))
 
     for d in directions:

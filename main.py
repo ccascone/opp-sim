@@ -4,9 +4,10 @@ import os
 
 import sim_params
 import params
+from random import shuffle
 from simulator import Simulator
 
-MAX_PROCESS = 4
+MAX_PROCESS = 2
 AVG_SIM_DURATION = sim_params.max_samples + 10  # seconds
 
 
@@ -39,5 +40,6 @@ if __name__ == '__main__':
     print "Will execute %d simulations (pid %d)..." % (num_simulators, os.getpgid(0))
     print_eta(num_simulators)
 
+    shuffle(param_list)
     pool.map(worker, param_list)
     print "All done!"

@@ -5,12 +5,15 @@ from copy import copy
 
 max_samples = 30
 
+defaults = dict(trace_day=conf.trace_day, trace_ts=130000, max_samples=max_samples)
+
+# Pipelines
 wc = dict(clock_freq=0, read_chunk=0, line_rate_util=1)
 rmt = dict(clock_freq=10 ** 9, read_chunk=80, line_rate_util=1)
 
+# Key sets
 keys_all = [key_5tuple, key_ipsrc_ipdst, key_ipsrc, key_proto_dport, key_proto_sport, key_const]
 keys_worst = [key_ipsrc, key_proto_dport, key_proto_sport, key_const]
-defaults = dict(trace_day=conf.trace_day, trace_ts=130000, max_samples=max_samples)
 
 sim_groups = {
     "hazard-wc-p-hash":
@@ -22,9 +25,9 @@ sim_groups = {
     "hazard-rmt-min-hash":
         dict(pipe=rmt, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=[4, 8], hashf=hash_crc16),
     "opp-wc":
-        dict(pipe=wc, sched=OPPScheduler, key=keys_worst, N=range(1, 17), Q=[1, 4, 8], hashf=hash_crc16),
-    "opp-rmt":
-        dict(pipe=rmt, sched=OPPScheduler, key=keys_worst, N=[8, 16, 32], Q=range(1, 9), hashf=hash_crc16),
+        dict(pipe=wc, sched=OPPScheduler, key=keys_all, N=range(1, 51), Q=[1, 4, 8, 10, 12, 16], hashf=hash_crc16),
+    "opp-rmt-stress":
+        dict(pipe=rmt, sched=OPPScheduler, key=keys_all, N=range(1, 51), Q=[1, 4, 8], hashf=hash_crc16),
 }
 
 
@@ -63,11 +66,11 @@ def generate_param_dicts(unfolded=False):
 if __name__ == '__main__':
 
     r = generate_param_dicts(False)
-    for sim_name in generate_param_dicts():
-        print "##\n## %s \n##" % sim_name
+    for sim in generate_param_dicts():
+        print "##\n## %s \n##" % sim
         data = []
-        for d in r[sim_name]:
-            data.append(["%s=%s" % (n, v.__name__ if callable(v) else v) for n, v in d.items()])
+        for param_dict in r[sim]:
+            data.append(["%s=%s" % (n, v.__name__ if callable(v) else v) for n, v in param_dict.items()])
 
         col_width = max(len(word) for row in data for word in row) + 2
         for row in data:
