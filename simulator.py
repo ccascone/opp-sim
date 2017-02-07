@@ -1,4 +1,5 @@
 import pickle
+import random
 import time
 from collections import OrderedDict, Counter
 from math import ceil
@@ -15,13 +16,20 @@ from simpacket import SimPacket
 lock = Lock()
 
 
+def transform_pkt_size(len, mlen):
+    if random.randrange(0, 100) > mlen * 100 and len > 1000 * mlen:
+        return max(64, int(random.gauss(1, 1.5) * 300 * mlen + 64))
+    else:
+        return max(64, len)
+
+
 class SimException(Exception):
     pass
 
 
 class Simulator:
     def __init__(self, trace_day, trace_ts, N, Q, sched, hashf, key, W=None, clock_freq=0, read_chunk=0,
-                 line_rate_util=0.0, sim_group='all', sim_name=None, max_samples=0):
+                 line_rate_util=0.0, mlen=1, sim_group='all', sim_name=None, max_samples=0):
         """
         Creates a new simulator instance.
         :param trace_day: Day of the traffic trace to use.
@@ -43,7 +51,7 @@ class Simulator:
         self.sim_params = OrderedDict(day=trace_day, ts=trace_ts, sched=sched.__name__,
                                       N=N, Q=Q, W=W,
                                       key=key.__name__, hash=hashf.__name__,
-                                      clock=clock_freq, read_chunk=read_chunk, util=line_rate_util)
+                                      mlen=mlen, clock=clock_freq, read_chunk=read_chunk, util=line_rate_util)
         self.label = '-'.join(["%s=%s" % (k, str(v)) for k, v in self.sim_params.items()])
 
         if sim_name is not None:
@@ -78,6 +86,7 @@ class Simulator:
             self.line_rate = 0
         self.time_stretch_factor = 0
         self.max_samples = max_samples
+        self.mlen = mlen
 
     def _run(self):
         if not self.debug and os.path.isfile(self.results_fname):
@@ -236,6 +245,9 @@ class Simulator:
                     # Report any queuing delay at ingress ports.
                     report_queueing_delay += sim_time - pkt_relative_time
 
+            # Packet size multiplier
+            pkt.iplen = transform_pkt_size(pkt.iplen, self.mlen)
+
             if 0 < self.read_chunk < pkt.iplen:
                 # Need more than 1 clock cycle to read the packet
                 extra_cycles_to_do = int(ceil(pkt.iplen / self.read_chunk)) - 1
@@ -360,7 +372,7 @@ class Simulator:
 
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
-    sim = Simulator(trace_day=conf.trace_day, trace_ts=130000, N=10, Q=2, W=8,
-                    sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_proto_sport,
-                    clock_freq=0, read_chunk=0, line_rate_util=1)
+    sim = Simulator(trace_day=conf.trace_day, trace_ts=130000, N=10, Q=1, W=1,
+                    sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
+                    clock_freq=0, read_chunk=80, line_rate_util=1, mlen=0.1)
     sim.run(debug=True)

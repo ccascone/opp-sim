@@ -9,7 +9,8 @@ defaults = dict(trace_day=conf.trace_day, trace_ts=130000, max_samples=max_sampl
 
 # Pipelines
 wc = dict(clock_freq=0, read_chunk=0, line_rate_util=1)
-rmt = dict(clock_freq=10 ** 9, read_chunk=80, line_rate_util=1)
+rmt_100 = dict(clock_freq=10 ** 9, read_chunk=80, line_rate_util=1)
+rmt_b2b = dict(clock_freq=0, read_chunk=80, line_rate_util=1)
 
 # Key sets
 keys_all = [key_5tuple, key_ipsrc_ipdst, key_ipsrc, key_proto_dport, key_proto_sport, key_const]
@@ -37,12 +38,21 @@ sim_groups = {
     #     dict(pipe=rmt, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=0, hashf=hash_perfect),
     # "hazard-rmt-min-hash":
     #     dict(pipe=rmt, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=[4, 8], hashf=hash_crc16),
-    "opp2-wc":
-        dict(pipe=wc, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_1, hashf=hash_crc16),
-    "opp2-wc-stress_W":
-        dict(pipe=wc, sched=OPPScheduler, key=keys_all, N=10, Q=1, W=[2 ** x for x in range(9)], hashf=hash_crc16),
-    "opp2-rmt-stress_N":
-        dict(pipe=rmt, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_2, hashf=hash_crc16),
+    # "opp2-wc":
+    #     dict(pipe=wc, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_1, hashf=hash_crc16),
+    # "opp2-wc-stress_W":
+    #     dict(pipe=wc, sched=OPPScheduler, key=keys_all, N=10, Q=1, W=[2 ** x for x in range(9)], hashf=hash_crc16),
+    # "opp2-rmt-stress_N":
+    #     dict(pipe=rmt_100, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_2, hashf=hash_crc16),
+    # "opp2-rmt-b2b-stress_chunk":
+    #     dict(sched=HazardDetector, key=key_const, N=10, Q=1, W=1, clock_freq=0, read_chunk=range(80, 1501, 142),
+    #          line_rate_util=1, hashf=hash_crc16),
+    "opp-b2b-mlen-stress-hazard":
+        dict(sched=HazardDetector, key=key_const, N=range(1, 21), Q=1, W=1, clock_freq=0,
+             mlen=[x / 100.0 for x in range(0, 110, 10)], hashf=hash_crc16, read_chunk=80),
+    "opp-b2b-mlen-stress-thrpt":
+        dict(sched=HazardDetector, key=key_const, N=range(1, 21), Q=1, W=1, clock_freq=0,
+             mlen=[x / 100.0 for x in range(0, 110, 10)], hashf=hash_crc16, read_chunk=80)
 }
 
 

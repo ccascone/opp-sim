@@ -7,3 +7,4 @@ results/*
 figs/*
 simulator.log
 parse_report.txt
+plot_data

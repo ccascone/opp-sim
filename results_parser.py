@@ -8,46 +8,61 @@ import sim_params
 from misc import hnum
 
 MAX_VAL = 1
-META_KEYS = ['cycle_util']
+MAX_X = 50
+Y_MULTIPLIER = 1
+META_KEYS = []  # ['cycle_util']
 
 translator = dict(
-    sched_quota_hazard="% concurrency hazard",
+    sched_quota_hazard="% concurrency hazards",
     sched_thrpt="Pipeline throughput",
-    key_5tuple="5tuple",
+    key_5tuple="5-tuple",
     key_ipsrc_ipdst="ipsrc,ipdst",
     key_ipsrc="ipsrc",
     key_proto_dport="proto,dport",
     key_proto_sport="proto,sport",
     key_const="* (constant)",
     pipe_wc="Worst case (100% util with minimum size packets)",
-    pipe_rmt="RMT pipeline",
+    pipe_rmt="RMT model (640Gb/s with 95% util and variable size packets)",
     cycle_util="util",
-    key_func="Flow key",
-    N="N (pipeline depth)"
+    key="Flow key",
+    N="Pipeline depth (clock cycles)"
 )
 
 
 def ts(word):
-    word = str(word)
-    if word in translator:
-        return translator[word]
+    if isinstance(word, (list, tuple)):
+        return '-'.join([ts(w) for w in word])
     else:
-        return word
+        word = str(word)
+        if word in translator:
+            return translator[word]
+        else:
+            return word
 
 
 result_groups = {
-    'hazard-wc-p-hash':
-        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key_func'),
-    'hazard-wc-min-hash':
-        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key_func'),
-    "hazard-rmt-p-hash":
-        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key_func'),
-    "hazard-rmt-min-hash":
-        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key_func'),
-    "opp-wc":
-        dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='key_func'),
-    "opp-rmt-stress":
-        dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='key_func')
+    # 'hazard-wc-p-hash':
+    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
+    # 'hazard-wc-min-hash':
+    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
+    # "hazard-rmt-p-hash":
+    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
+    # "hazard-rmt-min-hash":
+    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
+    # "opp-wc":
+    #     dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='key'),
+    # "opp-rmt-stress":
+    #     dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='key'),
+    # "opp2-wc":
+    #     dict(y_sample='sched_thrpt', x_param='N', z_param=('Q', 'W'), line_param='key'),
+    # "opp2-wc-stress_W":
+    #    dict(y_sample='sched_thrpt', x_param='W', z_param=('N', 'Q'), line_param='key'),
+    # "opp2-rmt-stress_N":
+    #     dict(y_sample='sched_thrpt', x_param='N', z_param=('Q', 'W'), line_param='key'),
+    "opp-b2b-mlen-stress-hazard":
+        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='mlen'),
+    "opp-b2b-mlen-stress-thrpt":
+        dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='mlen'),
 }
 
 
@@ -80,7 +95,11 @@ def do_pickle_parse(sim_group):
         line_name = params[conf['line_param']]
         y_values = samples[conf['y_sample']]
 
-        z = params[conf['z_param']]
+        if isinstance(conf['z_param'], (list, tuple)):
+            z = tuple([params[p] for p in conf['z_param']])
+        else:
+            z = params[conf['z_param']]
+
         x = float(params[conf['x_param']])
 
         if z not in parsed_results:
@@ -105,9 +124,18 @@ def parse_result_to_file(sim_group):
     line_label = conf['line_param']
     x_label = conf['x_param']
     y_label = conf['y_sample']
-    z_label = conf['z_param']
+    z_param = conf['z_param']
+    if isinstance(z_param, (tuple, list)):
+        z_label = '-'.join(z_param)
+    else:
+        z_label = conf['z_param']
 
     for z in results:
+
+        if isinstance(z, (tuple, list)):
+            z_str = '-'.join([str(i) for i in z])
+        else:
+            z_str = str(z)
 
         x_values = sorted(results[z].keys())
 
@@ -128,19 +156,19 @@ def parse_result_to_file(sim_group):
             err_values = ['?'] * len(line_names)
             for line in line_names:
                 if line in results[z][x]:
-                    avg_val = results[z][x][line]['avg']
-                    err_val = results[z][x][line]['err']
+                    avg_val = results[z][x][line]['avg'] * Y_MULTIPLIER
+                    err_val = results[z][x][line]['err'] * Y_MULTIPLIER
                     avg_values[line_names.index(line)] = avg_val
                     err_values[line_names.index(line)] = err_val
                     y_min = min(y_min, avg_val)
                     y_max = max(y_max, avg_val)
                 else:
-                    print >> stderr, "Missing point %s:%s in %s with %s=%s" % (x, line, sim_group, z_label, z)
+                    print >> stderr, "Missing point %s:%s in %s with %s=%s" % (x, line, sim_group, z_label, z_str)
 
             data.append(map(str, [x] + avg_values))
 
-        dat_fname = sim_group + "_%s=%s.dat" % (z_label, z)
-        pic_fname = sim_group + "_%s=%s.pdf" % (z_label, z)
+        dat_fname = sim_group + "_%s=%s.dat" % (z_label, z_str)
+        pic_fname = sim_group + "_%s=%s.pdf" % (z_label, z_str)
 
         if not os.path.exists("plot_data"):
             os.makedirs("plot_data")
@@ -152,7 +180,7 @@ def parse_result_to_file(sim_group):
         with open("plot_data/" + dat_fname, "w") as f:
 
             print >> f, "# %s" % ts(sim_group)
-            print >> f, "# %s=%s" % (ts(z_label), ts(z))
+            print >> f, "# %s=%s" % (ts(z_label), z_str)
             print >> f, "# %s" % ts(y_label)
 
             # Print nicely, aligned in columns
@@ -160,11 +188,17 @@ def parse_result_to_file(sim_group):
             for row in data:
                 print >> f, "".join(word.ljust(col_width) for word in row)
 
-        pipe_conf = sim_params.sim_groups[sim_group]['pipe']
-        pipe_name = "pipe_wc" if pipe_conf["read_chunk"] == 0 else "pipe_rmt"
+        try:
+            pipe_conf = sim_params.sim_groups[sim_group]['pipe']
+            pipe_name = "pipe_wc" if pipe_conf["read_chunk"] == 0 else "pipe_rmt"
+        except:
+            pipe_name = 'n/a'
 
-        metas_str = ", ".join(["%s=%s" % (ts(k), hnum(metadatas[z][k]['avg'])) for k in META_KEYS])
-        title = "%s - %s=%s (%s)" % (ts(pipe_name), ts(z_label), z, metas_str)
+        title = "%s\\n%s=%s" % (ts(pipe_name), ts(z_label), z)
+
+        if len(META_KEYS) > 0:
+            metas_str = ", ".join(["%s=%s" % (ts(k), hnum(metadatas[z][k]['avg'])) for k in META_KEYS])
+            title += " (%s)" % metas_str
 
         # Write gnuplot script
         with open("plot_data/plot.script", "a") as ps:
@@ -172,7 +206,7 @@ def parse_result_to_file(sim_group):
             print >> ps, "\nset output '%s'" % pic_fname
 
             print >> ps, "set key outside title '%s' box" % ts(line_label)
-            print >> ps, "set title  '%s'" % title
+            print >> ps, "set title  \"%s\"" % title
             print >> ps, "set xlabel '%s'" % ts(x_label)
             print >> ps, "set ylabel '%s'" % ts(y_label)
 
@@ -188,8 +222,7 @@ def main():
 
     with open("plot_data/plot.script", "w") as ps:
         print >> ps, "# gnuplot script"
-        print >> ps, "set terminal pdf linewidth 3 size 4in,2.5in"
-        print >> ps, "set autoscale"
+        print >> ps, "set terminal pdf linewidth 2.5 size 3.4in,2in"
         print >> ps, "set grid"
 
     for group in result_groups:
