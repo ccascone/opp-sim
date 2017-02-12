@@ -60,7 +60,7 @@ result_groups = {
     # "opp2-rmt-stress_N":
     #     dict(y_sample='sched_thrpt', x_param='N', z_param=('Q', 'W'), line_param='key'),
     "opp-b2b-mlen-stress-hazard":
-        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='mlen'),
+        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='mlen', style='lines'),
     "opp-b2b-mlen-stress-thrpt":
         dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='mlen'),
 }
@@ -210,7 +210,11 @@ def parse_result_to_file(sim_group):
             print >> ps, "set xlabel '%s'" % ts(x_label)
             print >> ps, "set ylabel '%s'" % ts(y_label)
 
-            usings = ["u 1:%d t '%s'" % (i + 2, ts(line_names[i])) for i in range(len(line_names))]
+            u_str = "u 1:%d t '%s'"
+            if 'style' in conf:
+                u_str += " w %s" % conf['style']
+
+            usings = [u_str % (i + 2, ts(line_names[i])) for i in range(len(line_names))]
             using_str = ", \\\n\t'' ".join(usings)
 
             print >> ps, "plot '%s' %s" % (dat_fname, using_str)

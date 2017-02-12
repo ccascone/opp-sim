@@ -15,6 +15,7 @@ rmt_b2b = dict(clock_freq=0, read_chunk=80, line_rate_util=1)
 # Key sets
 keys_all = [key_5tuple, key_ipsrc_ipdst, key_ipsrc, key_proto_dport, key_proto_sport, key_const]
 keys_worst = [key_ipsrc, key_proto_dport, key_proto_sport, key_const]
+keys_min = [key_proto_sport, key_5tuple, key_const]
 
 qw_conf_1 = [
     dict(Q=1, W=[4, 8]),
@@ -47,12 +48,18 @@ sim_groups = {
     # "opp2-rmt-b2b-stress_chunk":
     #     dict(sched=HazardDetector, key=key_const, N=10, Q=1, W=1, clock_freq=0, read_chunk=range(80, 1501, 142),
     #          line_rate_util=1, hashf=hash_crc16),
-    "opp-b2b-mlen-stress-hazard":
-        dict(sched=HazardDetector, key=key_const, N=range(1, 21), Q=1, W=1, clock_freq=0,
-             mlen=[x / 100.0 for x in range(0, 110, 10)], hashf=hash_crc16, read_chunk=80),
-    "opp-b2b-mlen-stress-thrpt":
-        dict(sched=HazardDetector, key=key_const, N=range(1, 21), Q=1, W=1, clock_freq=0,
-             mlen=[x / 100.0 for x in range(0, 110, 10)], hashf=hash_crc16, read_chunk=80)
+    # "opp-b2b-mlen-stress-hazard":
+    #     dict(sched=HazardDetector, key=key_const, N=range(1, 21), Q=1, W=1, clock_freq=0,
+    #          mlen=[x / 100.0 for x in range(0, 110, 10)], hashf=hash_crc16, read_chunk=80),
+    # "opp-b2b-mlen-stress-thrpt":
+    #     dict(sched=HazardDetector, key=key_const, N=range(1, 21), Q=1, W=1, clock_freq=0,
+    #          mlen=[x / 100.0 for x in range(0, 110, 10)], hashf=hash_crc16, read_chunk=80),
+    "opp-b2b-caida-flow-hazard":
+        dict(sched=HazardDetector, key=keys_min, N=range(1, 51), qw=qw_conf_2, clock_freq=0,
+             mlen=[0.0, 0.2, 1], hashf=hash_crc16, read_chunk=80),
+    "opp-b2b-caida-flow-thrpt":
+        dict(sched=HazardDetector, key=keys_min, N=range(1, 51), qw=qw_conf_2, clock_freq=0,
+             mlen=[0.0, 0.2, 1], hashf=hash_crc16, read_chunk=80)
 }
 
 
