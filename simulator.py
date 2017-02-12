@@ -7,13 +7,15 @@ from multiprocessing import Lock
 
 import os
 
-import conf
+import conf as caida_conf
 import misc
 import params
 import scheduler
 from simpacket import SimPacket
 
 lock = Lock()
+
+MAX_PKT_REPORT_COUNT = 100000
 
 
 def transform_pkt_size(len, mlen):
@@ -28,8 +30,9 @@ class SimException(Exception):
 
 
 class Simulator:
-    def __init__(self, trace_day, trace_ts, N, Q, sched, hashf, key, W=None, clock_freq=0, read_chunk=0,
-                 line_rate_util=0.0, mlen=1, sim_group='all', sim_name=None, max_samples=0):
+    def __init__(self, trace_provider, N, Q, sched, hashf, key, W=None,
+                 clock_freq=0, read_chunk=0, line_rate_util=0.0, mlen=1, sim_group='all', sim_name=None, max_samples=0,
+                 trace_cluster=None, trace_rack=None, trace_day=None, trace_ts=None):
         """
         Creates a new simulator instance.
         :param trace_day: Day of the traffic trace to use.
@@ -48,8 +51,10 @@ class Simulator:
             W = Q
 
         # type: (basestring, int, int, int, function, function, int, int, int) -> None
-        self.sim_params = OrderedDict(day=trace_day, ts=trace_ts, sched=sched.__name__,
-                                      N=N, Q=Q, W=W,
+        self.sim_params = OrderedDict(provider=trace_provider,
+                                      day=trace_day, ts=trace_ts,  # caida
+                                      cluster=trace_cluster, rack=trace_rack,  # fb
+                                      sched=sched.__name__, N=N, Q=Q, W=W,
                                       key=key.__name__, hash=hashf.__name__,
                                       mlen=mlen, clock=clock_freq, read_chunk=read_chunk, util=line_rate_util)
         self.label = '-'.join(["%s=%s" % (k, str(v)) for k, v in self.sim_params.items()])
@@ -61,8 +66,12 @@ class Simulator:
         if not os.path.exists("results/%s" % self.sim_group):
             os.makedirs("results/%s" % self.sim_group)
 
+        self.trace_provider = trace_provider
+        self.trace_cluster = trace_cluster
+        self.trace_rack = trace_rack
         self.trace_day = trace_day
         self.trace_ts = trace_ts
+
         self.clock_freq = clock_freq  # Ghz
         self.N = N
         self.Q = Q
@@ -140,21 +149,41 @@ class Simulator:
 
     def do_simulation(self):
 
-        fname_a = conf.trace_dir + '/' + conf.trace_fname('A', self.trace_day, self.trace_ts, 'parsed')
-        fname_b = conf.trace_dir + '/' + conf.trace_fname('B', self.trace_day, self.trace_ts, 'parsed')
+        if self.trace_provider == 'caida':
 
-        if not os.path.isfile(fname_a) or not os.path.isfile(fname_b):
-            raise SimException("Missing trace file for direction A or B")
+            fname_a = caida_conf.trace_dir + '/' + caida_conf.trace_fname('A', self.trace_day, self.trace_ts, 'parsed')
+            fname_b = caida_conf.trace_dir + '/' + caida_conf.trace_fname('B', self.trace_day, self.trace_ts, 'parsed')
 
-        try:
-            with open(fname_a, 'rb') as fa:
-                self._print('Reading %s...' % fname_a, False)
-                dump_a = fa.read()
-            with open(fname_b, 'rb') as fb:
-                self._print('Reading %s...' % fname_b, False)
-                dump_b = fb.read()
-        except IOError:
-            raise SimException("Unable to read trace file")
+            if not os.path.isfile(fname_a) or not os.path.isfile(fname_b):
+                raise SimException("Missing CAIDA trace file for direction A or B")
+
+            try:
+                with open(fname_a, 'rb') as fa:
+                    self._print('Reading %s...' % fname_a, False)
+                    dump_a = fa.read()
+                with open(fname_b, 'rb') as fb:
+                    self._print('Reading %s...' % fname_b, False)
+                    dump_b = fb.read()
+            except IOError:
+                raise SimException("Unable to read trace file")
+
+        elif self.trace_provider == 'fb':
+
+            fname = './fb/%s/%s-%s.parsed' % (self.trace_cluster, self.trace_cluster, self.trace_rack)
+
+            if not os.path.isfile(fname):
+                raise SimException("Not such FB trace file: %s" % fname)
+            try:
+                with open(fname, 'rb') as f:
+                    self._print('Reading %s...' % fname, False)
+                    dump_a = f.read()
+            except IOError:
+                raise SimException("Unable to read trace file %s" % fname)
+
+            dump_b = ''
+
+        else:
+            raise SimException("Invalid trace provider %s" % self.trace_provider)
 
         tot_pkt_a, rem_a = divmod(len(dump_a), 32.0)
         tot_pkt_b, rem_b = divmod(len(dump_b), 32.0)
@@ -166,7 +195,7 @@ class Simulator:
             self._print('Simulated line rate is %sbps' % misc.hnum(self.line_rate), False)
             self._print('Evaluating traces bitrate...', False)
             bitrate_a = misc.evaluate_bitrate(dump_a)
-            bitrate_b = misc.evaluate_bitrate(dump_b)
+            bitrate_b = misc.evaluate_bitrate(dump_b) if len(dump_b) else {'max': 0}
             max_bitrate = bitrate_a['max'] + bitrate_b['max']
             self.time_stretch_factor = max_bitrate / (self.line_rate * self.sim_util)
             self._print('Trace max bitrate is %sbps, setting time stretch factor to %f...'
@@ -272,7 +301,8 @@ class Simulator:
             report_read_cycle_count += 1
             report_trfc_byte_count += pkt.iplen
 
-            if (pkt.ts_nano - report_trfc_last_ts) >= self.report_interval:
+            if report_pkt_count >= MAX_PKT_REPORT_COUNT:
+                # if (pkt.ts_nano - report_trfc_last_ts) >= self.report_interval:
                 # Report values every 1 second of traffic.
                 report_delta_time = time.time() - report_ts
                 report_cycle_count = cycle - report_last_cycle
@@ -372,7 +402,10 @@ class Simulator:
 
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
-    sim = Simulator(trace_day=conf.trace_day, trace_ts=130000, N=10, Q=1, W=1,
+    #sim = Simulator(trace_provider='caida', trace_day=caida_conf.trace_day, trace_ts=130000, N=10, Q=1, W=1,
+    #                sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
+    #                clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
+    sim = Simulator(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7', N=3, Q=1, W=1,
                     sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
-                    clock_freq=0, read_chunk=80, line_rate_util=1, mlen=0.1)
+                    clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
     sim.run(debug=True)

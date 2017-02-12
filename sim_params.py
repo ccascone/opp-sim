@@ -3,9 +3,12 @@ from scheduler import HazardDetector, OPPScheduler
 from params import *
 from copy import copy
 
-max_samples = 15
+max_samples = 30
 
-defaults = dict(trace_day=conf.trace_day, trace_ts=130000, max_samples=max_samples)
+defaults = dict(max_samples=max_samples)
+
+caida = dict(trace_provider='caida', trace_day=conf.trace_day, trace_ts=130000)
+fb = dict(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7')
 
 # Pipelines
 wc = dict(clock_freq=0, read_chunk=0, line_rate_util=1)
@@ -54,12 +57,12 @@ sim_groups = {
     # "opp-b2b-mlen-stress-thrpt":
     #     dict(sched=HazardDetector, key=key_const, N=range(1, 21), Q=1, W=1, clock_freq=0,
     #          mlen=[x / 100.0 for x in range(0, 110, 10)], hashf=hash_crc16, read_chunk=80),
-    "opp-b2b-caida-flow-hazard":
-        dict(sched=HazardDetector, key=keys_min, N=range(1, 51), qw=qw_conf_2, clock_freq=0,
-             mlen=[0.0, 0.2, 1], hashf=hash_crc16, read_chunk=80),
-    "opp-b2b-caida-flow-thrpt":
-        dict(sched=HazardDetector, key=keys_min, N=range(1, 51), qw=qw_conf_2, clock_freq=0,
-             mlen=[0.0, 0.2, 1], hashf=hash_crc16, read_chunk=80)
+    "opp-b2b-fb-flow-hazard":
+        dict(trace=fb, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=1, W=1, clock_freq=0,
+             hashf=hash_crc16, read_chunk=80),
+    "opp-b2b-fb-flow-thrpt":
+        dict(trace=fb, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_2, clock_freq=0,
+             hashf=hash_crc16, read_chunk=80)
 }
 
 
