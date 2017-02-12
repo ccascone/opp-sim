@@ -13,6 +13,7 @@ from progressbar import Percentage
 from params import hash_crc16, hash_crc32
 
 MAX_IPLEN = 1500
+MAX_RACK_PER_CLUSTER = 30
 
 
 def make_cdf_dat(cluster, name, elements):
@@ -37,13 +38,12 @@ def make_cdf_dat(cluster, name, elements):
 def parse_trace(cluster, trace_lines):
     assert cluster in ('A', 'B', 'C')
     label = "cluster-%s" % cluster
-    parsed_filename = label + '.parsed'
     pkt_report_count = 0
     next_report_pkts = 10
     start_ts = time.time()
-    discarded_count = 0
     processed_count = 0
-    parsed_lines = []
+    # Grouped per rack
+    parsed_lines = dict()
     i = 0
 
     print "Will parse %d packets..." % len(trace_lines)
@@ -60,10 +60,14 @@ def parse_trace(cluster, trace_lines):
     sports = []
     dports = []
 
+    racksrcs = set()
+
     try:
         for tline in trace_lines:
 
-            ts, iplen, ipsrc, ipdst, sport, dport, proto = tline.split("\t")[0:7]
+            ts, iplen, ipsrc, ipdst, sport, dport, proto, hpsrc, \
+            hpdst, racksrc, rackdst, podsrc, poddst, \
+            intercluster, interdatacenter = tline.split("\t")
 
             direct = 'X'
             ts = float(ts)
@@ -81,7 +85,16 @@ def parse_trace(cluster, trace_lines):
             sports.append(sport)
             dports.append(dport)
 
-            parsed_lines.append(pack('cdH4s4scHH', direct, ts, iplen, ipsrc, ipdst, proto, sport, dport))
+            packed_line = pack('cdH4s4scHH', direct, ts, iplen, ipsrc, ipdst, proto, sport, dport)
+
+            for rackid in (racksrc, rackdst):
+                if rackid not in parsed_lines:
+                    parsed_lines[rackid] = []
+
+            parsed_lines[racksrc].append(packed_line)
+            parsed_lines[rackdst].append(packed_line)
+
+            racksrcs.add(racksrc)
 
             processed_count += 1
 
@@ -90,7 +103,7 @@ def parse_trace(cluster, trace_lines):
 
             if pkt_report_count >= next_report_pkts:
                 # Check if we're packing right
-                pieces = unpack('cdH4s4scHH', parsed_lines[-1])
+                pieces = unpack('cdH4s4scHH', parsed_lines[racksrc][-1])
                 assert (direct, ts, iplen, ipsrc, ipdst, proto, sport, dport) == tuple(pieces)
                 delta_seconds = time.time() - start_ts
                 pkt_rate = pkt_report_count / delta_seconds
@@ -102,8 +115,20 @@ def parse_trace(cluster, trace_lines):
     finally:
         bar.update(i)
 
-    with open('%s' % parsed_filename, 'wb') as f:
-        f.write(''.join(parsed_lines))
+    for prune_rack in set(parsed_lines.keys()).difference(racksrcs):
+        del parsed_lines[prune_rack]
+
+    with open('%s.report' % cluster, 'w') as f:
+        rack_lens = [(r, len(parsed_lines[r])) for r in parsed_lines]
+        rack_lens = sorted(rack_lens, key=lambda x: x[1], reverse=True)
+        for rlen in rack_lens:
+            print >> f, "%s pkt_count=%s" % (rlen[0], rlen[1])
+        tot_pkts = sum([r[1] for r in rack_lens])
+        print >> f, "TOT PKT COUNT >> %s" % tot_pkts
+
+    for rack in rack_lens[0:MAX_RACK_PER_CLUSTER]:
+        with open('%s-%s.parsed' % (cluster, rack[0]), 'wb') as f:
+            f.write(''.join(parsed_lines[rack[0]]))
 
     make_cdf_dat(cluster, 'iplen', iplens)
     make_cdf_dat(cluster, 'ipsrc', ipsrcs)
@@ -112,10 +137,7 @@ def parse_trace(cluster, trace_lines):
     make_cdf_dat(cluster, 'sport', sports)
     make_cdf_dat(cluster, 'dport', dports)
 
-    msg = "PARSER: completed %s, processed=%dpkts, discarded=%dpkts (%.3f)" % (label,
-                                                                               processed_count,
-                                                                               discarded_count,
-                                                                               discarded_count / float(i))
+    msg = "PARSER: completed %s, processed=%dpkts" % (label, processed_count)
     with open('fb_parse_report.txt', 'a') as r:
         r.write(msg + "\n")
 
@@ -167,6 +189,8 @@ if __name__ == "__main__":
     for cluster in ('A', 'B', 'C'):
         curr_dir = os.path.dirname(os.path.realpath(__file__))
         trace_fullpath = os.path.dirname(os.path.realpath(__file__)) + '/fb/%s' % cluster
+        if not os.path.isdir(trace_fullpath):
+            continue
         if not curr_dir.endswith('fb/%s' % cluster):
             os.chdir(trace_fullpath)
         parse_cluster(cluster)
