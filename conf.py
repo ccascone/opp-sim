@@ -7,6 +7,8 @@ trace_day = "20150219"
 directions = ('A', 'B')
 extensions = ("pcap.gz", "pcap.stats", "times.gz")
 timestamps = [130000]
+
+
 # timestamps = [125911, 130000, 130100, 130200, 130300, 130400, 130500, 130600, 130700, 130800, 130900, 131000,
 #               131100, 131200, 131300, 131400, 131500, 131600, 131700, 131800, 131900, 132000, 132100, 132200,
 #               132300, 132400, 132500, 132600, 132700, 132800, 132900, 133000, 133100, 133200, 133300, 133400,
@@ -15,8 +17,8 @@ timestamps = [130000]
 #               135900, 140000, 140100, 140200]
 
 
-def trace_fname(direction, day, time, extension, link_name=trace_link):
-    return "{link_name}.dir{direction}.{day}-{time}.UTC.anon.{extension}".format(**locals())
+def trace_fname(trace_opts, extension):
+    return "{link}.dir{direction}.{day}-{time}.UTC.anon.".format(**trace_opts) + extension
 
 
 def parse_trace_fname(fname):
@@ -24,18 +26,21 @@ def parse_trace_fname(fname):
     Returns direction, day, time, extension for the given trace file name.
     """
     pieces = fname.split('.', 5)
-    assert (pieces[0], pieces[3], pieces[4]) == (trace_link, 'UTC', 'anon')
+    assert (pieces[3], pieces[4]) == ('UTC', 'anon')
     date = pieces[2].split('-')
     if len(pieces) > 5:
         ext = pieces[5]
     else:
         ext = ''
-    return pieces[1][-1], date[0], date[1], ext
+    trace = dict(link=pieces[0], direction=pieces[1][-1], day=date[0], time=date[1])
+    return trace, ext
+
 
 # Read MD5 (to avoid red-downloading the same file)
 def read_md5_lines():
     with open(trace_dir + '/' + "md5.md5") as f:
         return f.readlines()
+
 
 md5s = {}
 

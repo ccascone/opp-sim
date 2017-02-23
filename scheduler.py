@@ -7,30 +7,7 @@ SKIP = -1
 WORK, EMPTY, STALL, HAZARD = range(4)
 
 
-class DummyScheduler:
-    def __init__(self, Q, N, hash_func):
-        self.digests = dict()
-        self.queues = [[] for _ in range(Q)]
-        self.queues_sum_size = 0
-        pass
-
-    def accept(self, pkt):
-        return True
-
-    def execute_tick(self):
-        return False
-
-    def queue_occupancy(self):
-        return 0, 0
-
-    def digest_stats(self):
-        return []
-
-    def key_count(self):
-        return 0
-
-
-class OPPScheduler:
+class OPPScheduler():
     def __init__(self, Q, W, N, hash_func):
         # assert Q >= N, "Q must be greater or equal to N"
         self.Q = Q
@@ -39,14 +16,17 @@ class OPPScheduler:
         self.hash_func = hash_func
         self.queues = [deque(array('h', [])) for _ in range(Q)]
         self.hols = [None] * Q
-        self.locked_digests = deque([None] * N)
+        self.pipeline = deque([None] * N)
         self.range_Q = [i for i in range(self.Q)]
         self.first_priority = 0
         # Cache digests for speed and reporting.
         self.digests = {self.Q: {}, self.W: {}}
-        self.locked_count = 0
-        self.queues_sum_size = 0
+        self.pipeline_count = 0
+        self.pkt_backlog = 0
         self.last_result = -1
+        self.clock = 0
+        self.latencies = deque()
+        self.queue_lens = deque()
 
     def accept(self, pkt):
         """
@@ -56,15 +36,18 @@ class OPPScheduler:
         # Enqueue ingress packet by its lookup key.
         q = self._digest(pkt.lookup_key, self.Q)
         w = self._digest(pkt.update_key, self.W)
+        p = (w, self.clock)
         # Head of line, otherwise enqueue
         if self.hols[q] is None:
-            self.hols[q] = w
+            self.hols[q] = p
         else:
-            self.queues[q].append(w)
-        self.queues_sum_size += 1
+            self.queues[q].append(p)
+            self.queue_lens.append([len(self.queues[i]) for i in self.range_Q])
+        self.pkt_backlog += 1
 
     def execute_tick(self):
         self.last_result = self._execute_tick()
+        self.clock += 1
         return self.last_result
 
     def _execute_tick(self):
@@ -72,15 +55,16 @@ class OPPScheduler:
         Executes a clock tick. This is the main scheduler execution.
         :return: True if a packet was served, False if not (i.e. idle cycle)
         """
-        # Remove last digest form the pipeline.
-        if self.locked_digests.pop():
-            # Extracted value is not None
-            self.locked_count -= 1
 
-        if self.queues_sum_size == 0:
+        # Remove last digest form the pipeline.
+        if self.pipeline.pop():
+            # Extracted value is not None
+            self.pipeline_count -= 1
+
+        if self.pkt_backlog == 0:
             # No packets to serve.
-            self.locked_digests.appendleft(None)
-            if self.locked_count == 0:
+            self.pipeline.appendleft(None)
+            if self.pipeline_count == 0:
                 return SKIP
             else:
                 return EMPTY
@@ -94,8 +78,8 @@ class OPPScheduler:
             # Round robin priority.
             q = (i + self.first_priority) % self.Q
             # !! Scheduler arbitration condition !!
-            w = self.hols[q]
-            if w is not None and w not in self.locked_digests:
+            p = self.hols[q]
+            if p is not None and p[0] not in self.pipeline:
                 # Found a packet that can be safelly served, with no concurrency hazards
                 # Update the hol spot for this queue.
                 try:
@@ -103,13 +87,14 @@ class OPPScheduler:
                 except IndexError:
                     # Queue empty.
                     self.hols[q] = None
-                self.locked_digests.appendleft(w)
-                self.queues_sum_size -= 1
-                self.locked_count += 1
+                self.pipeline.appendleft(p[0])
+                self.pkt_backlog -= 1
+                self.pipeline_count += 1
+                self.latencies.append(self.clock - p[1])
                 return WORK
 
-        # Any packet could be served, this is a stall.
-        self.locked_digests.appendleft(None)
+        # No packets can be served, this is a stall.
+        self.pipeline.appendleft(None)
         return STALL
 
     def _digest(self, key, space):
@@ -126,6 +111,16 @@ class OPPScheduler:
             space = self.Q
         digest_count = float(len(self.digests[space]))
         return [sum(x == s for x in self.digests[space].values()) / digest_count for s in range(space)]
+
+    def flush_latencies(self):
+        latencies = self.latencies
+        self.latencies = deque()
+        return latencies
+
+    def flush_queue_lens(self):
+        samples = self.queue_lens
+        self.queue_lens = deque()
+        return samples
 
     def key_count(self):
         return len(self.digests[self.Q])
@@ -194,6 +189,13 @@ class HazardDetector:
     def digest_stats(self):
         digest_count = float(len(self.digests))
         return [sum(x == q for x in self.digests.values()) / digest_count for q in range(self.Q)]
+
+    def flush_latencies(self):
+        # No latency in this scheduler
+        return []
+
+    def flush_queue_lens(self):
+        return [[0]]
 
     def key_count(self):
         return len(self.digests)

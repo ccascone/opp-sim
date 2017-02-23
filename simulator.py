@@ -2,7 +2,7 @@ import pickle
 import random
 import time
 from collections import OrderedDict, Counter
-from math import ceil
+from math import ceil, floor
 from multiprocessing import Lock
 
 import os
@@ -30,12 +30,41 @@ class SimException(Exception):
 
 
 class Simulator:
-    def __init__(self, trace_provider, N, Q, sched, hashf, key, W=None,
-                 clock_freq=0, read_chunk=0, line_rate_util=0.0, mlen=1, sim_group='all', sim_name=None, max_samples=0,
-                 trace_cluster=None, trace_rack=None, trace_day=None, trace_ts=None):
+    def __init__(self, trace):
+        self.trace = trace
+        self.dumps = None
+
+        self.sim_params = None
+        self.label = None
+        self.sim_group = None
+        self.results_fname = None
+        self.clock_freq = None  # Ghz
+        self.N = None
+        self.Q = None
+        self.W = None
+        self.hash_func = None
+        self.key_func = None
+        self.scheduler = None
+        self.read_chunk = None
+        self.sim_util = None
+        self.report_interval = 1
+        self.tick_duration = None
+        self.running = None
+        self.samples = None
+        self.threaded = None
+        self.debug = None
+        self.line_rate = None
+        self.line_rate = None
+        self.time_stretch_factor = None
+        self.max_samples = None
+        self.mlen = None
+
+    def provision(self, N, Q, sched, hashf, key, W=None,
+                  clock_freq=0, read_chunk=0, line_rate_util=0.0, mlen=1, sim_group='all', sim_name=None,
+                  max_samples=0):
         """
         Creates a new simulator instance.
-        :param trace_day: Day of the traffic trace to use.
+        :param trace['day: Day of the traffic trace to use.
         :param trace_ts: Timestamp of the traffic trace to use.
         :param N: Number of clock cycles needed for the OPP stage to atomically process a packet.
         :param Q: Number of flow queues.
@@ -51,13 +80,18 @@ class Simulator:
             W = Q
 
         # type: (basestring, int, int, int, function, function, int, int, int) -> None
-        self.sim_params = OrderedDict(provider=trace_provider,
-                                      day=trace_day, ts=trace_ts,  # caida
-                                      cluster=trace_cluster, rack=trace_rack,  # fb
+        trace_label = '_'.join(
+            [self.trace['provider']] + [self.trace[k] for k in sorted(self.trace.keys()) if k != 'provider'])
+
+        self.sim_params = OrderedDict(trace=trace_label,
                                       sched=sched.__name__, N=N, Q=Q, W=W,
                                       key=key.__name__, hash=hashf.__name__,
                                       mlen=mlen, clock=clock_freq, read_chunk=read_chunk, util=line_rate_util)
         self.label = '-'.join(["%s=%s" % (k, str(v)) for k, v in self.sim_params.items()])
+
+        trace_params = {'trace_' + k: v for k, v in self.trace.items()}
+        self.sim_params = dict(self.sim_params)
+        self.sim_params.update(trace_params)
 
         if sim_name is not None:
             self.label = sim_name
@@ -65,12 +99,6 @@ class Simulator:
         self.results_fname = "results/%s/%s.p" % (self.sim_group, self.label)
         if not os.path.exists("results/%s" % self.sim_group):
             os.makedirs("results/%s" % self.sim_group)
-
-        self.trace_provider = trace_provider
-        self.trace_cluster = trace_cluster
-        self.trace_rack = trace_rack
-        self.trace_day = trace_day
-        self.trace_ts = trace_ts
 
         self.clock_freq = clock_freq  # Ghz
         self.N = N
@@ -98,13 +126,14 @@ class Simulator:
         self.mlen = mlen
 
     def _run(self):
+        success = False
         if not self.debug and os.path.isfile(self.results_fname):
 
             with open(self.results_fname, "rb") as f:
                 try:
                     pickle.load(f)
                     self._print("WARNING: simulation aborted, result already exists for this configuration")
-                    return
+                    return True
                 except EOFError:
                     # Can't read file, do sim again
                     os.remove(self.results_fname)
@@ -114,6 +143,7 @@ class Simulator:
 
         try:
             self.do_simulation()
+            success = True
             delta_minutes = (time.time() - start_time) / 60.0
             self._print("Simulation completed (duration=%.1fmin)." % delta_minutes)
             if not self.debug:
@@ -131,6 +161,8 @@ class Simulator:
         finally:
             self.running = False
 
+        return success
+
     def run(self, threaded=False, debug=False):
         lock.acquire()
         lock_fname = self.results_fname + '.lock'
@@ -143,50 +175,46 @@ class Simulator:
         self.threaded = threaded
         self.debug = debug
         try:
-            self._run()
+            success = self._run()
         finally:
             os.remove(lock_fname)
+        return success
 
     def do_simulation(self):
 
-        if self.trace_provider == 'caida':
 
-            fname_a = caida_conf.trace_dir + '/' + caida_conf.trace_fname('A', self.trace_day, self.trace_ts, 'parsed')
-            fname_b = caida_conf.trace_dir + '/' + caida_conf.trace_fname('B', self.trace_day, self.trace_ts, 'parsed')
+        if self.trace['provider'] == 'caida':
+            if 'direction' in self.trace and self.trace['direction'] == 'X':
+                # Already merged trace
+                fname_a = './caida/' + caida_conf.trace_fname(self.trace, 'parsed')
+                fname_b = None
+            else:
+                fname_a = './caida/' + caida_conf.trace_fname(dict(direction='A', **self.trace), 'parsed')
+                fname_b = './caida/' + caida_conf.trace_fname(dict(direction='B', **self.trace), 'parsed')
 
-            if not os.path.isfile(fname_a) or not os.path.isfile(fname_b):
-                raise SimException("Missing CAIDA trace file for direction A or B")
-
-            try:
-                with open(fname_a, 'rb') as fa:
-                    self._print('Reading %s...' % fname_a, False)
-                    dump_a = fa.read()
-                with open(fname_b, 'rb') as fb:
-                    self._print('Reading %s...' % fname_b, False)
-                    dump_b = fb.read()
-            except IOError:
-                raise SimException("Unable to read trace file")
-
-        elif self.trace_provider == 'fb':
-
-            fname = './fb/%s/%s-%s.parsed' % (self.trace_cluster, self.trace_cluster, self.trace_rack)
-
-            if not os.path.isfile(fname):
-                raise SimException("Not such FB trace file: %s" % fname)
-            try:
-                with open(fname, 'rb') as f:
-                    self._print('Reading %s...' % fname, False)
-                    dump_a = f.read()
-            except IOError:
-                raise SimException("Unable to read trace file %s" % fname)
-
-            dump_b = ''
+        elif self.trace['provider'] == 'fb':
+            fname_a = './fb/%s/%s-%s.parsed' % (self.trace['cluster'], self.trace['cluster'], self.trace['rack'])
+            fname_b = None
 
         else:
-            raise SimException("Invalid trace provider %s" % self.trace_provider)
+            raise SimException("Invalid trace provider %s" % self.trace['provider'])
 
-        tot_pkt_a, rem_a = divmod(len(dump_a), 32.0)
-        tot_pkt_b, rem_b = divmod(len(dump_b), 32.0)
+        if self.dumps is None:
+            self.dumps = {fname_a: '', fname_b: ''}
+            for fname in [fname_a, fname_b]:
+                if fname:
+                    if not os.path.isfile(fname):
+                        raise SimException("Not such trace file: %s" % fname_a)
+                    else:
+                        try:
+                            with open(fname, 'rb') as f:
+                                self._print('Reading %s...' % fname, False)
+                                self.dumps[fname] = f.read()
+                        except IOError:
+                            raise SimException("Unable to read trace file %s" % fname)
+
+        tot_pkt_a, rem_a = divmod(len(self.dumps[fname_a]), 32.0)
+        tot_pkt_b, rem_b = divmod(len(self.dumps[fname_b]), 32.0)
 
         if (rem_a + rem_b) != 0:
             raise SimException("Invalid byte count in file A or B (file size must be multiple of 32 bytes)")
@@ -194,15 +222,19 @@ class Simulator:
         if self.line_rate > 0 and self.sim_util != 0:
             self._print('Simulated line rate is %sbps' % misc.hnum(self.line_rate), False)
             self._print('Evaluating traces bitrate...', False)
-            bitrate_a = misc.evaluate_bitrate(dump_a)
-            bitrate_b = misc.evaluate_bitrate(dump_b) if len(dump_b) else {'max': 0}
+            bitrate_a = misc.evaluate_bitrate(self.dumps[fname_a])
+            bitrate_b = misc.evaluate_bitrate(self.dumps[fname_b]) if len(self.dumps[fname_b]) else {'max': 0}
             max_bitrate = bitrate_a['max'] + bitrate_b['max']
             self.time_stretch_factor = max_bitrate / (self.line_rate * self.sim_util)
             self._print('Trace max bitrate is %sbps, setting time stretch factor to %f...'
                         % (misc.hnum(max_bitrate), self.time_stretch_factor), False)
             self.report_interval *= self.time_stretch_factor
 
-        tot_pkts = tot_pkt_a + tot_pkt_b
+        tot_pkts = int(tot_pkt_a + tot_pkt_b)
+
+        if tot_pkts < MAX_PKT_REPORT_COUNT:
+            raise SimException('Not enough packets in this trace (found %s, required %s)'
+                               % (tot_pkts, MAX_PKT_REPORT_COUNT))
 
         idx_a = 0  # index of next packet to be read from trace A
         idx_b = 0  # ... from trace B
@@ -226,17 +258,18 @@ class Simulator:
         report_queueing_delay = 0  # cumulative ingress queuing delay
         report_last_cycle = 0  # last cycle number of the last report
 
-        self._print("Starting simulation (tot_pkts=%s)..." % misc.hnum(tot_pkts))
+        self._print("Starting simulation, will print report every %s pkts (total %s)..."
+                    % (misc.hnum(MAX_PKT_REPORT_COUNT), misc.hnum(tot_pkts)))
 
         while self.running:
 
             # Extract packet from direction A
             if not pkt_a and idx_a < tot_pkt_a:
-                pkt_a = SimPacket(dump_a, idx_a * 32)
+                pkt_a = SimPacket(self.dumps[fname_a], idx_a * 32)
                 idx_a += 1
             # Extract packet from direction B
             if not pkt_b and idx_b < tot_pkt_b:
-                pkt_b = SimPacket(dump_b, idx_b * 32)
+                pkt_b = SimPacket(self.dumps[fname_b], idx_b * 32)
                 idx_b += 1
             # Choose between A and B.
             if pkt_a and (not pkt_b or pkt_a.ts_nano <= pkt_b.ts_nano):
@@ -324,32 +357,38 @@ class Simulator:
 
                 util = report_read_cycle_count / float(cycle - report_last_cycle)
 
-                try:
-                    queue_sizes = [len(x) for x in self.scheduler.queues]
-                except AttributeError:
-                    queue_sizes = [0]
-
                 p_tot_cycles = float(sum(report_sched_cycles))
                 assert p_tot_cycles == report_cycle_count
                 p_quotas = [report_sched_cycles[x] / p_tot_cycles
                             for x in range(len(report_sched_cycles))]
 
-                report_values = OrderedDict(sched_thrpt=thrpt,
-                                            sched_quota_work=p_quotas[scheduler.WORK],
-                                            sched_quota_hazard=p_quotas[scheduler.HAZARD],
-                                            sched_quota_stall=p_quotas[scheduler.STALL],
-                                            sched_quota_empty=p_quotas[scheduler.EMPTY],
-                                            sched_queues_avg=(sum(queue_sizes) / float(self.Q) if self.Q else 0),
-                                            sched_queues_max=max(queue_sizes),
-                                            sched_queues_min=min(queue_sizes),
-                                            sched_keys_count=self.scheduler.key_count(),
-                                            trfc_bitrate=trfc_bitrate,
-                                            trfc_pkt_rate=trfc_pkt_rate,
-                                            cycle_util=util,
-                                            avg_in_queue_delay=sim_avg_queue_delay,
-                                            sim_pkt_rate=sim_pkt_rate,
-                                            sim_cycle_rate=sim_cycle_rate,
-                                            sim_eta=sim_eta)
+                latencies = self.scheduler.flush_latencies()
+                if len(latencies) == 0:
+                    latencies = [0]
+                latencies = sorted(latencies)
+
+                queue_lens = self.scheduler.flush_queue_lens()
+                peak_queue_util = max([max(lens) for lens in queue_lens])
+
+                report_values = OrderedDict(
+                    sched_thrpt=thrpt,
+                    sched_quota_work=p_quotas[scheduler.WORK],
+                    sched_quota_hazard=p_quotas[scheduler.HAZARD],
+                    sched_quota_stall=p_quotas[scheduler.STALL],
+                    sched_quota_empty=p_quotas[scheduler.EMPTY],
+                    sched_queue_util_peak=peak_queue_util,
+                    sched_latency_max=max(latencies),
+                    sched_latency_avg=sum(latencies) / len(latencies),
+                    sched_latency_median=misc.percentile(latencies, 0.5),
+                    sched_latency_99th=misc.percentile(latencies, 0.99),
+                    sched_keys_count=self.scheduler.key_count(),
+                    trfc_bitrate=trfc_bitrate,
+                    trfc_pkt_rate=trfc_pkt_rate,
+                    cycle_util=util,
+                    avg_in_queue_delay=sim_avg_queue_delay,
+                    sim_pkt_rate=sim_pkt_rate,
+                    sim_cycle_rate=sim_cycle_rate,
+                    sim_eta=sim_eta)
 
                 self._append_samples(report_values)
                 sample_count += 1
@@ -402,10 +441,17 @@ class Simulator:
 
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
-    #sim = Simulator(trace_provider='caida', trace_day=caida_conf.trace_day, trace_ts=130000, N=10, Q=1, W=1,
-    #                sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
-    #                clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
-    sim = Simulator(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7', N=3, Q=1, W=1,
-                    sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
-                    clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
+    caida_trace = dict(provider='caida', link='equinix-chicago', day='20150219', time='125911', direction='X')
+    fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
+    sim = Simulator(caida_trace)
+    sim.provision(N=10, Q=1, W=1,
+                  sched=scheduler.HazardDetector, hashf=params.hash_crc16, key=params.key_const,
+                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1, max_samples=10)
+    # sim = Simulator(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7', N=3, Q=1, W=1,
+    #                 sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
+    #                 clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
+    sim.run(debug=True)
+    sim.provision(N=10, Q=2, W=1,
+                  sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
+                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1, max_samples=10)
     sim.run(debug=True)

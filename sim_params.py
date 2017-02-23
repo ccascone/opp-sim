@@ -7,8 +7,8 @@ max_samples = 30
 
 defaults = dict(max_samples=max_samples)
 
-caida = dict(trace_provider='caida', trace_day=conf.trace_day, trace_ts=130000)
-fb = dict(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7')
+caida_trace = dict(provider='caida', link='equinix-chicago', day='20150219', time='125911', direction='X')
+fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
 
 # Pipelines
 wc = dict(clock_freq=0, read_chunk=0, line_rate_util=1)
@@ -57,11 +57,17 @@ sim_groups = {
     # "opp-b2b-mlen-stress-thrpt":
     #     dict(sched=HazardDetector, key=key_const, N=range(1, 21), Q=1, W=1, clock_freq=0,
     #          mlen=[x / 100.0 for x in range(0, 110, 10)], hashf=hash_crc16, read_chunk=80),
-    "opp-b2b-fb-flow-hazard":
-        dict(trace=fb, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=1, W=1, clock_freq=0,
+    # "opp-b2b-fb-flow-hazard":
+    #     dict(trace=fb_trace, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=1, W=1, clock_freq=0,
+    #          hashf=hash_crc16, read_chunk=80),
+    # "opp-b2b-fb-flow-thrpt":
+    #     dict(trace=fb_trace, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_2, clock_freq=0,
+    #          hashf=hash_crc16, read_chunk=80)
+    "test-2":
+        dict(trace=caida_trace, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=1, W=1, clock_freq=0,
              hashf=hash_crc16, read_chunk=80),
-    "opp-b2b-fb-flow-thrpt":
-        dict(trace=fb, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_2, clock_freq=0,
+    "test-1":
+        dict(trace=caida_trace, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_2, clock_freq=0,
              hashf=hash_crc16, read_chunk=80)
 }
 
@@ -80,21 +86,26 @@ def explode_param_list(other_list, original_list, p_name=None):
     return new_p_dicts
 
 
+noexp = ['trace']
+
+
 def explode_lines(sim_lines):
     new_sim_lines = []
     for sim_line in sim_lines:
         p_dicts = [{}]
         for p_name in sim_line:
             p_value = sim_line[p_name]
-            if isinstance(p_value, (list, tuple)):
-                p_dicts = explode_param_list(original_list=p_dicts, other_list=p_value, p_name=p_name)
-                p_dicts = explode_lines(p_dicts)
-            elif isinstance(p_value, (dict,)):
-                other_sim_lines = explode_lines([p_value])
-                p_dicts = explode_param_list(original_list=p_dicts, other_list=other_sim_lines)
-            else:
-                for p_dict in p_dicts:
-                    p_dict[p_name] = p_value
+            if p_name not in noexp:
+                if isinstance(p_value, (list, tuple)):
+                    p_dicts = explode_param_list(original_list=p_dicts, other_list=p_value, p_name=p_name)
+                    p_dicts = explode_lines(p_dicts)
+                    continue
+                elif isinstance(p_value, (dict,)):
+                    other_sim_lines = explode_lines([p_value])
+                    p_dicts = explode_param_list(original_list=p_dicts, other_list=other_sim_lines)
+                    continue
+            for p_dict in p_dicts:
+                p_dict[p_name] = p_value
         new_sim_lines.extend(p_dicts)
     return new_sim_lines
 
@@ -117,8 +128,10 @@ if __name__ == '__main__':
     for pd in param_dicts:
         data.append(["%s=%s" % (n, v.__name__ if callable(v) else v) for n, v in pd.items()])
 
-    col_width = max(len(word) for row in data for word in row) + 2
+    col_widths = [0] * max(len(row) for row in data)
+    for i in range(len(col_widths)):
+        col_widths[i] = max(len(row[i]) for row in data)
     for row in data:
-        print "".join(word.ljust(col_width) for word in row)
+        print "".join(row[i].ljust(col_widths[i] + 4) for i in range(len(row)))
 
     print len(param_dicts)
