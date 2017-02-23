@@ -1,5 +1,7 @@
 import time
 from collections import Counter
+from collections import deque
+from multiprocessing import Pool, cpu_count
 from struct import pack, unpack
 from sys import stderr
 
@@ -10,18 +12,26 @@ from progressbar import ETA
 from progressbar import FileTransferSpeed
 from progressbar import Percentage
 
-from params import hash_crc16, hash_crc32
-
 MAX_IPLEN = 1500
 MAX_RACK_PER_CLUSTER = 30
+MAX_PACKETS_PER_RACK = 50000000
+
+mapz = dict(ip=dict(), port=dict())
+mapz_count = dict(ip=0, port=0)
 
 
-def make_cdf_dat(cluster, name, elements):
+def reduce_addr_space(type, value):
+    if value not in mapz[type]:
+        mapz[type][value] = mapz_count[type]
+        mapz_count[type] += 1
+    return mapz[type][value]
+
+
+def make_cdf_dat(cluster, name, counter):
     if not os.path.isdir('./stats'):
         os.makedirs('./stats')
 
-    counter = Counter(elements)
-    tot_elements = float(len(elements))
+    tot_elements = float(sum(counter.values()))
 
     if name == 'iplen':
         distr = {x: (counter[x] / tot_elements) for x in sorted(counter.keys())}
@@ -35,100 +45,108 @@ def make_cdf_dat(cluster, name, elements):
             print >> f, "%s\t%s" % (x, distr[x])
 
 
-def parse_trace(cluster, trace_lines):
-    assert cluster in ('A', 'B', 'C')
+def parse_trace(cluster, trace_files):
     label = "cluster-%s" % cluster
     pkt_report_count = 0
-    next_report_pkts = 10
-    start_ts = time.time()
     processed_count = 0
     # Grouped per rack
-    parsed_lines = dict()
     i = 0
 
-    print "Will parse %d packets..." % len(trace_lines)
+    print "Will process %s trace files..." % len(trace_files)
 
     widgets = [label, Percentage(), ' ', Bar(), ' ', ETA(), ' ', FileTransferSpeed(unit='p')]
     bar = progressbar.ProgressBar(widgets=widgets)
-    bar.start(max_value=len(trace_lines))
+    bar.start(max_value=len(trace_files))
     bar.update(1)
 
-    iplens = []
-    ipsrcs = []
-    ipdsts = []
-    protos = []
-    sports = []
-    dports = []
+    iplens = Counter()
+    ipsrcs = Counter()
+    ipdsts = Counter()
+    protos = Counter()
+    sports = Counter()
+    dports = Counter()
 
-    racksrcs = set()
+    report_iplens = deque()
+    report_ipsrcs = deque()
+    report_ipdsts = deque()
+    report_protos = deque()
+    report_sports = deque()
+    report_dports = deque()
 
-    try:
+    lines_count = dict()
+
+    # we expect trace_files to be already sorted
+    for tfile in trace_files:
+
+        with open(tfile) as ftrace:
+            trace_lines = ftrace.readlines()
+
+        parsed_lines = dict()
+
         for tline in trace_lines:
 
             ts, iplen, ipsrc, ipdst, sport, dport, proto, hpsrc, \
-            hpdst, racksrc, rackdst, podsrc, poddst, \
-            intercluster, interdatacenter = tline.split("\t")
+            hpdst, racksrc, rackdst, _ = tline.split("\t", maxsplit=11)
+
+            # The following packing logic is due to backward compatibility with CAIDA traces
 
             direct = 'X'
             ts = float(ts)
             iplen = min(int(iplen), MAX_IPLEN)
-            ipsrc = pack('I', hash_crc32(ipsrc))
-            ipdst = pack('I', hash_crc32(ipdst))
+            ipsrc = pack('I', reduce_addr_space('ip', ipsrc))
+            ipdst = pack('I', reduce_addr_space('ip', ipdst))
             proto = chr(int(proto))
-            sport = hash_crc16(sport)
-            dport = hash_crc16(dport)
+            sport = reduce_addr_space('port', sport)
+            dport = reduce_addr_space('port', dport)
 
-            iplens.append(iplen)
-            ipsrcs.append(ipsrc)
-            ipdsts.append(ipdst)
-            protos.append(proto)
-            sports.append(sport)
-            dports.append(dport)
+            report_iplens.append(iplen)
+            report_ipsrcs.append(ipsrc)
+            report_ipdsts.append(ipdst)
+            report_protos.append(proto)
+            report_sports.append(sport)
+            report_dports.append(dport)
 
             packed_line = pack('cdH4s4scHH', direct, ts, iplen, ipsrc, ipdst, proto, sport, dport)
 
             for rackid in (racksrc, rackdst):
                 if rackid not in parsed_lines:
                     parsed_lines[rackid] = []
-
-            parsed_lines[racksrc].append(packed_line)
-            parsed_lines[rackdst].append(packed_line)
-
-            racksrcs.add(racksrc)
-
-            processed_count += 1
+                parsed_lines[rackid].append(packed_line)
 
             pkt_report_count += 1
-            i += 1
 
-            if pkt_report_count >= next_report_pkts:
-                # Check if we're packing right
-                pieces = unpack('cdH4s4scHH', parsed_lines[racksrc][-1])
-                assert (direct, ts, iplen, ipsrc, ipdst, proto, sport, dport) == tuple(pieces)
-                delta_seconds = time.time() - start_ts
-                pkt_rate = pkt_report_count / delta_seconds
-                next_report_pkts = int(pkt_rate) * 0.5
-                pkt_report_count = 0
-                start_ts = time.time()
-                bar.update(i)
-
-    finally:
+        # Finished parsing this file, write data
+        i += 1
         bar.update(i)
 
-    for prune_rack in set(parsed_lines.keys()).difference(racksrcs):
-        del parsed_lines[prune_rack]
+        iplens.update(report_iplens)
+        ipsrcs.update(report_ipsrcs)
+        ipdsts.update(report_ipdsts)
+        protos.update(report_protos)
+        sports.update(report_sports)
+        dports.update(report_dports)
 
-    with open('%s.report' % cluster, 'w') as f:
-        rack_lens = [(r, len(parsed_lines[r])) for r in parsed_lines]
-        rack_lens = sorted(rack_lens, key=lambda x: x[1], reverse=True)
-        for rlen in rack_lens:
-            print >> f, "%s pkt_count=%s" % (rlen[0], rlen[1])
-        tot_pkts = sum([r[1] for r in rack_lens])
-        print >> f, "TOT PKT COUNT >> %s" % tot_pkts
+        report_iplens = deque()
+        report_ipsrcs = deque()
+        report_ipdsts = deque()
+        report_protos = deque()
+        report_sports = deque()
+        report_dports = deque()
 
-    for rack in rack_lens[0:MAX_RACK_PER_CLUSTER]:
-        with open('%s-%s.parsed' % (cluster, rack[0]), 'wb') as f:
-            f.write(''.join(parsed_lines[rack[0]]))
+        for rack in parsed_lines:
+            with open('%s-%s.parsed' % (cluster, rack), 'ab') as f:
+                f.write(''.join(parsed_lines[rack]))
+                if rack not in lines_count:
+                    lines_count[rack] = 0
+                lines_count[rack] += len(parsed_lines[rack])
+
+        max_count = max(lines_count.values())
+
+        if max_count >= MAX_PACKETS_PER_RACK:
+            print "\nReached max number of packets per rack. Stopping here."
+            break
+        else:
+            print "\nCurrent max packets per rack: %s" % max_count
 
     make_cdf_dat(cluster, 'iplen', iplens)
     make_cdf_dat(cluster, 'ipsrc', ipsrcs)
@@ -137,29 +155,33 @@ def parse_trace(cluster, trace_lines):
     make_cdf_dat(cluster, 'sport', sports)
     make_cdf_dat(cluster, 'dport', dports)
 
-    msg = "PARSER: completed %s, processed=%dpkts" % (label, processed_count)
-    with open('fb_parse_report.txt', 'a') as r:
-        r.write(msg + "\n")
-
 
 def rename_bz2_files():
+    pool = Pool(cpu_count())
+    param_list = []
     for f in os.listdir('./'):
         if '.bz2' in f:
             if not f.endswith('.bz2'):
                 new_fname = f[0:f.index('.bz2')] + '.bz2'
-                os.rename(f, new_fname)
+                param_list.append((f, new_fname))
+    if len(param_list) > 0:
+        pool.map(os.rename, param_list)
+        pool.close()
+        pool.join()
 
 
 def unzip_all():
-    for f in os.listdir('./'):
-        if f.endswith('.bz2'):
-            print "Unzipping %s..." % f
-            retcode = os.system('bunzip2 ' + f)
-            if retcode == 0:
-                pass
-                # os.remove(f)
-            else:
-                print >> stderr, "unable to unzip " + f
+    def worker(fname):
+        print "Unzipping %s..." % fname
+        retcode = os.system('bunzip2 ' + fname)
+        if retcode != 0:
+            print >> stderr, "unable to unzip " + fname
+
+    pool = Pool(cpu_count())
+    param_list = [f for f in os.listdir('./') if f.endswith('.bz2')]
+    pool.map(worker, param_list)
+    pool.close()
+    pool.join()
 
 
 def parse_cluster(cluster):
@@ -168,21 +190,14 @@ def parse_cluster(cluster):
     # Trigger parsing
     print "Starting parsing of cluster %s" % cluster
 
-    rename_bz2_files()
-    unzip_all()
-
-    trace_lines = []
+    # rename_bz2_files()
+    # unzip_all()
 
     trace_files = os.listdir('./')
     trace_files = [x for x in trace_files if x.endswith('_n')]
     trace_files = sorted(trace_files)
 
-    for fname in trace_files:
-        if fname.endswith('_n'):
-            with open(fname) as ftrace:
-                trace_lines.extend(ftrace.readlines())
-
-    parse_trace(cluster, trace_lines)
+    parse_trace(cluster, trace_files)
 
 
 if __name__ == "__main__":

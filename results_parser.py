@@ -59,10 +59,14 @@ result_groups = {
     #    dict(y_sample='sched_thrpt', x_param='W', z_param=('N', 'Q'), line_param='key'),
     # "opp2-rmt-stress_N":
     #     dict(y_sample='sched_thrpt', x_param='N', z_param=('Q', 'W'), line_param='key'),
-    "opp-b2b-mlen-stress-hazard":
-        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='mlen', style='lines'),
-    "opp-b2b-mlen-stress-thrpt":
-        dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='mlen'),
+    # "opp-b2b-mlen-stress-hazard":
+    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='mlen', style='lines'),
+    # "opp-b2b-mlen-stress-thrpt":
+    #     dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='mlen'),
+    "opp-b2b-fb-flow-hazard":
+        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
+    "opp-b2b-fb-flow-thrpt":
+        dict(y_sample='sched_thrpt', x_param='N', z_param=('Q', 'W'), line_param='key')
 }
 
 

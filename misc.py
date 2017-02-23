@@ -6,6 +6,7 @@ from genericpath import isfile
 from conf import trace_dir, md5s
 from simpacket import SimPacket
 
+powers = [(9, 'G', 'n'), (6, 'M', 'u'), (3, 'K', 'm')]
 
 def hnum(value):
     value = float(value)
@@ -50,9 +51,6 @@ def was_downloaded(fname):
     this_dir = os.path.dirname(os.path.realpath(__file__))
     file_path = this_dir + '/' + trace_dir + '/' + fname
     return isfile(file_path) and md5(file_path) == md5s[fname]
-
-
-powers = [(9, 'G', 'n'), (6, 'M', 'u'), (3, 'K', 'm')]
 
 if __name__ == '__main__':
     result = evaluate_trace_bitrate('caida/equinix-chicago.dirA.20150219-125911.UTC.anon.parsed')
