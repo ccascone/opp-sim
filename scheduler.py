@@ -10,6 +10,9 @@ WORK, EMPTY, STALL, HAZARD = range(4)
 class OPPScheduler():
     def __init__(self, Q, W, N, hash_func):
         # assert Q >= N, "Q must be greater or equal to N"
+        assert Q > 0
+        assert W > 0
+        assert N > 0
         self.Q = Q
         self.N = N
         self.W = W
@@ -22,11 +25,12 @@ class OPPScheduler():
         # Cache digests for speed and reporting.
         self.digests = {self.Q: {}, self.W: {}}
         self.pipeline_count = 0
-        self.pkt_backlog = 0
+        self.backlog = 0
         self.last_result = -1
         self.clock = 0
         self.latencies = deque()
-        self.queue_lens = deque()
+        self.queue_util_peak = 0
+        self.locked_keys = [False] * self.W
 
     def accept(self, pkt):
         """
@@ -42,8 +46,8 @@ class OPPScheduler():
             self.hols[q] = p
         else:
             self.queues[q].append(p)
-            self.queue_lens.append([len(self.queues[i]) for i in self.range_Q])
-        self.pkt_backlog += 1
+            self.queue_util_peak = max(self.queue_util_peak, len(self.queues[q]))
+        self.backlog += 1
 
     def execute_tick(self):
         self.last_result = self._execute_tick()
@@ -57,17 +61,17 @@ class OPPScheduler():
         """
 
         # Remove last digest form the pipeline.
-        if self.pipeline.pop():
-            # Extracted value is not None
+        try:
+            self.locked_keys[self.pipeline.pop()] = False
             self.pipeline_count -= 1
+        except TypeError:
+            # popped None
+            pass
 
-        if self.pkt_backlog == 0:
+        if self.backlog == 0:
             # No packets to serve.
             self.pipeline.appendleft(None)
-            if self.pipeline_count == 0:
-                return SKIP
-            else:
-                return EMPTY
+            return EMPTY if self.pipeline_count > 0 else SKIP
 
         # There are packets that are waiting to be served...
 
@@ -79,7 +83,7 @@ class OPPScheduler():
             q = (i + self.first_priority) % self.Q
             # !! Scheduler arbitration condition !!
             p = self.hols[q]
-            if p is not None and p[0] not in self.pipeline:
+            if p is not None and not self.locked_keys[p[0]]:
                 # Found a packet that can be safelly served, with no concurrency hazards
                 # Update the hol spot for this queue.
                 try:
@@ -88,7 +92,8 @@ class OPPScheduler():
                     # Queue empty.
                     self.hols[q] = None
                 self.pipeline.appendleft(p[0])
-                self.pkt_backlog -= 1
+                self.locked_keys[p[0]] = True
+                self.backlog -= 1
                 self.pipeline_count += 1
                 self.latencies.append(self.clock - p[1])
                 return WORK
@@ -117,10 +122,10 @@ class OPPScheduler():
         self.latencies = deque()
         return latencies
 
-    def flush_queue_lens(self):
-        samples = self.queue_lens
-        self.queue_lens = deque()
-        return samples
+    def flush_queue_util_peak(self):
+        sample = self.queue_util_peak
+        self.queue_util_peak = 0
+        return sample
 
     def key_count(self):
         return len(self.digests[self.Q])
@@ -194,8 +199,31 @@ class HazardDetector:
         # No latency in this scheduler
         return []
 
-    def flush_queue_lens(self):
-        return [[0]]
+    def flush_queue_util_peak(self):
+        return 0
 
     def key_count(self):
         return len(self.digests)
+
+
+class DummyScheduler():
+    def __init__(self, **kwargs):
+        pass
+
+    def accept(self, pkt):
+        pass
+
+    def execute_tick(self):
+        return WORK
+
+    def digest_stats(self, space=None):
+        return [0]
+
+    def flush_latencies(self):
+        return [0]
+
+    def flush_queue_util_peak(self):
+        return 0
+
+    def key_count(self):
+        return 0
