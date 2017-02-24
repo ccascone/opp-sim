@@ -93,5 +93,5 @@ def key_proto_dport(pkt):
 
 
 def key_proto_sport(pkt):
-    pkt.lookup_key = pkt.sport() + pkt.sport()
+    pkt.lookup_key = pkt.proto() + pkt.sport()
     pkt.update_key = pkt.lookup_key
