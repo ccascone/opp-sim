@@ -5,9 +5,36 @@ from copy import copy
 
 max_samples = 30
 
-defaults = dict(max_samples=max_samples)
+#defaults = dict(max_samples=max_samples)
+defaults = dict()
 
-caida_trace = dict(provider='caida', link='equinix-chicago', day='20150219', time='125911', direction='X')
+caida_2015_chicago_dates = [('20150219', '125911'), ('20150219', '130000'), ('20150219', '130100'),
+                            ('20150219', '130200'), ('20150219', '130300'), ('20150219', '130400'),
+                            ('20150219', '130500'), ('20150219', '130600'), ('20150219', '130700'),
+                            ('20150219', '130800'), ('20150219', '130900'), ('20150219', '131000'),
+                            ('20150219', '131100'), ('20150219', '131200'), ('20150219', '131300'),
+                            ('20150219', '131400'), ('20150219', '131500'), ('20150219', '131600'),
+                            ('20150219', '131700'), ('20150219', '131800'), ('20150219', '131900'),
+                            ('20150219', '132000'), ('20150219', '132100'), ('20150219', '132200'),
+                            ('20150219', '132300'), ('20150219', '132400'), ('20150219', '132500'),
+                            ('20150219', '132600'), ('20150219', '132700'), ('20150219', '132800'),
+                            ('20150219', '132900'), ('20150219', '133000'), ('20150219', '133100'),
+                            ('20150219', '133200'), ('20150219', '133300'), ('20150219', '133400'),
+                            ('20150219', '133500'), ('20150219', '133600'), ('20150219', '133700'),
+                            ('20150219', '133800'), ('20150219', '133900'), ('20150219', '134000'),
+                            ('20150219', '134100'), ('20150219', '134200'), ('20150219', '134300'),
+                            ('20150219', '134400'), ('20150219', '134500'), ('20150219', '134600'),
+                            ('20150219', '134700'), ('20150219', '134800'), ('20150219', '134900'),
+                            ('20150219', '135000'), ('20150219', '135100'), ('20150219', '135200'),
+                            ('20150219', '135300'), ('20150219', '135400'), ('20150219', '135500'),
+                            ('20150219', '135600'), ('20150219', '135700'), ('20150219', '135800'),
+                            ('20150219', '135900'), ('20150219', '140000'), ('20150219', '140100'),
+                            ('20150219', '140200')]
+
+caida_chicago_template = dict(provider='caida', link='equinix-chicago', direction='X')
+
+caida_test_trace = dict(day='20150219', time='125911', **caida_chicago_template)
+caida_chicago_2015_traces = [dict(day=d, time=t, **caida_chicago_template) for d, t in caida_2015_chicago_dates]
 fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
 
 # Pipelines
@@ -28,9 +55,15 @@ qw_conf_1 = [
 ]
 
 qw_conf_2 = [
-    dict(Q=1, W=[4, 8]),
+    dict(Q=1, W=[1, 4, 8]),
     dict(Q=4, W=[4, 8]),
     dict(Q=8, W=[8, 16]),
+]
+
+qw_conf_3 = [
+    dict(Q=1, W=[4, 8]),
+    dict(Q=4, W=8),
+    dict(Q=8, W=16),
 ]
 
 sim_groups = {
@@ -63,21 +96,19 @@ sim_groups = {
     # "opp-b2b-fb-flow-thrpt":
     #     dict(trace=fb_trace, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_2, clock_freq=0,
     #          hashf=hash_crc16, read_chunk=80)
-    "test-2":
-        dict(trace=caida_trace, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=1, W=1, clock_freq=0,
-             hashf=hash_crc16, read_chunk=80),
-    "test-1":
-        dict(trace=caida_trace, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_2, clock_freq=0,
-             hashf=hash_crc16, read_chunk=80)
+    "caida-chi15-opp":
+        dict(trace=caida_chicago_2015_traces, sched=OPPScheduler, key=keys_min, N=range(1, 40), qw=qw_conf_3,
+             hashf=hash_crc16, read_chunk=80, clock_freq=0),
 }
 
+noexp = ['trace']
 
 def explode_param_list(other_list, original_list, p_name=None):
     new_p_dicts = []
     for val in other_list:
         for p_dict in original_list:
             d = copy(p_dict)
-            if isinstance(val, dict):
+            if p_name not in noexp and isinstance(val, dict):
                 d.update(val)
             else:
                 assert p_name is not None
@@ -86,24 +117,20 @@ def explode_param_list(other_list, original_list, p_name=None):
     return new_p_dicts
 
 
-noexp = ['trace']
-
-
 def explode_lines(sim_lines):
     new_sim_lines = []
     for sim_line in sim_lines:
         p_dicts = [{}]
         for p_name in sim_line:
             p_value = sim_line[p_name]
-            if p_name not in noexp:
-                if isinstance(p_value, (list, tuple)):
-                    p_dicts = explode_param_list(original_list=p_dicts, other_list=p_value, p_name=p_name)
-                    p_dicts = explode_lines(p_dicts)
-                    continue
-                elif isinstance(p_value, (dict,)):
-                    other_sim_lines = explode_lines([p_value])
-                    p_dicts = explode_param_list(original_list=p_dicts, other_list=other_sim_lines)
-                    continue
+            if isinstance(p_value, (list, tuple)):
+                p_dicts = explode_param_list(original_list=p_dicts, other_list=p_value, p_name=p_name)
+                p_dicts = explode_lines(p_dicts)
+                continue
+            if p_name not in noexp and isinstance(p_value, (dict,)):
+                other_sim_lines = explode_lines([p_value])
+                p_dicts = explode_param_list(original_list=p_dicts, other_list=other_sim_lines)
+                continue
             for p_dict in p_dicts:
                 p_dict[p_name] = p_value
         new_sim_lines.extend(p_dicts)
