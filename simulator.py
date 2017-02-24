@@ -1,8 +1,8 @@
 import pickle
 import random
 import time
-from collections import OrderedDict, Counter
-from math import ceil, floor
+from collections import OrderedDict
+from math import ceil
 from multiprocessing import Lock
 
 import os
@@ -16,11 +16,18 @@ from simpacket import SimPacket
 lock = Lock()
 
 MAX_PKT_REPORT_COUNT = 100000
+REPORT_STEP = MAX_PKT_REPORT_COUNT * 100
 
 
-def transform_pkt_size(len, mlen):
-    if random.randrange(0, 100) > mlen * 100 and len > 1000 * mlen:
-        return max(64, int(random.gauss(1, 1.5) * 300 * mlen + 64))
+def transform_pkt_size(len, alpha):
+    """
+    Packet size tranform function as per the NSDI poster.
+    :param len:
+    :param alpha:
+    :return:
+    """
+    if random.randrange(0, 100) > alpha * 100 and len > 1000 * alpha:
+        return max(64, int(random.gauss(1, 1.5) * 300 * alpha + 64))
     else:
         return max(64, len)
 
@@ -61,7 +68,7 @@ class Simulator:
 
     def provision(self, N, Q, sched, hashf, key, W=None,
                   clock_freq=0, read_chunk=0, line_rate_util=0.0, mlen=1, sim_group='all', sim_name=None,
-                  max_samples=0):
+                  max_samples=5):
         """
         Creates a new simulator instance.
         :param trace['day: Day of the traffic trace to use.
@@ -74,6 +81,9 @@ class Simulator:
         :param read_chunk: Number of bytes that can be read from an input port at each clock cycle.
                             0 to read the whole packet in 1 tick.
         :param line_rate_util:
+        :param sim_group:
+        :param sim_name:
+        :param max_samples:
         """
 
         if W is None:
@@ -181,7 +191,6 @@ class Simulator:
         return success
 
     def do_simulation(self):
-
 
         if self.trace['provider'] == 'caida':
             if 'direction' in self.trace and self.trace['direction'] == 'X':
@@ -367,16 +376,13 @@ class Simulator:
                     latencies = [0]
                 latencies = sorted(latencies)
 
-                queue_lens = self.scheduler.flush_queue_lens()
-                peak_queue_util = max([max(lens) for lens in queue_lens])
-
                 report_values = OrderedDict(
                     sched_thrpt=thrpt,
                     sched_quota_work=p_quotas[scheduler.WORK],
                     sched_quota_hazard=p_quotas[scheduler.HAZARD],
                     sched_quota_stall=p_quotas[scheduler.STALL],
                     sched_quota_empty=p_quotas[scheduler.EMPTY],
-                    sched_queue_util_peak=peak_queue_util,
+                    sched_queue_util_peak=self.scheduler.flush_queue_util_peak(),
                     sched_latency_max=max(latencies),
                     sched_latency_avg=sum(latencies) / len(latencies),
                     sched_latency_median=misc.percentile(latencies, 0.5),
@@ -397,6 +403,14 @@ class Simulator:
                     Simulator._print_report(report_values)
 
                 if 0 < self.max_samples == sample_count:
+                    return
+
+                # Skip REPORT_STEP packets
+                idx_a += REPORT_STEP
+                idx_b += REPORT_STEP
+                if fname_a and (idx_a + MAX_PKT_REPORT_COUNT) >= tot_pkt_a \
+                        or fname_b and (idx_b + MAX_PKT_REPORT_COUNT) >= tot_pkt_b:
+                    # Not enough pkts
                     return
 
                 # Reset report variables.
@@ -444,14 +458,10 @@ if __name__ == '__main__':
     caida_trace = dict(provider='caida', link='equinix-chicago', day='20150219', time='125911', direction='X')
     fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
     sim = Simulator(caida_trace)
-    sim.provision(N=10, Q=1, W=1,
-                  sched=scheduler.HazardDetector, hashf=params.hash_crc16, key=params.key_const,
-                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1, max_samples=10)
+    sim.provision(N=30, Q=1, W=8,
+                  sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_5tuple,
+                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
     # sim = Simulator(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7', N=3, Q=1, W=1,
     #                 sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
     #                 clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
-    sim.run(debug=True)
-    sim.provision(N=10, Q=2, W=1,
-                  sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
-                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1, max_samples=10)
     sim.run(debug=True)
