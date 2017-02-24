@@ -4,13 +4,7 @@ from sys import stderr
 
 import os
 
-import sim_params
-from misc import hnum
-
-MAX_VAL = 1
-MAX_X = 50
-Y_MULTIPLIER = 1
-META_KEYS = []  # ['cycle_util']
+from misc import percentile, hnum
 
 translator = dict(
     sched_quota_hazard="% concurrency hazards",
@@ -37,8 +31,38 @@ def ts(word):
         if word in translator:
             return translator[word]
         else:
+            word = word.replace('_', ' ')
             return word
 
+
+def avg(values):
+    return sum(values) / float(len(values))
+
+
+def perc_99th(values):
+    return percentile(sorted(values), 0.99)
+
+
+def perc_95th(values):
+    return percentile(sorted(values), 0.95)
+
+
+def median(values):
+    return percentile(sorted(values), 0.50)
+
+
+def thrpt_100(line_samples):
+    thrpt_samples = line_samples['sched_thrpt']
+    return len([x for x in thrpt_samples if x < 0.99]) < 3
+
+
+def max1(value):
+    return min(value, 1)
+
+
+scales = {'sched_thrpt': 'lin', 'sched_latency_99th': 'log10', 'sched_queue_util_peak': 'log10'}
+filter_funcs = {'sched_latency_99th': thrpt_100, 'sched_queue_util_peak': thrpt_100}
+map_funcs = {'sched_thrpt': max1}
 
 result_groups = {
     # 'hazard-wc-p-hash':
@@ -63,26 +87,27 @@ result_groups = {
     #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='mlen', style='lines'),
     # "opp-b2b-mlen-stress-thrpt":
     #     dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='mlen'),
-    "opp-b2b-fb-flow-hazard":
-        dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
-    "opp-b2b-fb-flow-thrpt":
-        dict(y_sample='sched_thrpt', x_param='N', z_param=('Q', 'W'), line_param='key')
+    # "opp-b2b-fb-flow-hazard":
+    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
+    # "opp-b2b-fb-flow-thrpt":
+    #     dict(y_sample='sched_thrpt', x_param='N', z_param=('Q', 'W'), line_param='key')
+    "caida-chi15-opp":
+        dict(
+            y_sample={
+                'sched_thrpt': min,
+                'sched_latency_99th': (avg, median, max, perc_95th),
+                'sched_queue_util_peak': perc_99th
+            },
+            x_param='N',
+            z_param=('Q', 'W'),
+            line_param='key',
+            meta_samples={'cycle_util': [avg]})
 }
-
-
-def avg(values):
-    return sum([min(v, MAX_VAL) for v in values]) / len(values)
-
-
-def err(values):
-    # TODO
-    return 0
 
 
 def do_pickle_parse(sim_group):
     conf = result_groups[sim_group]
-    parsed_results = {}
-    parsed_metadatas = {}
+    all_samples = {}
 
     for filename in glob.glob('results/%s/*.p' % sim_group):
 
@@ -93,41 +118,50 @@ def do_pickle_parse(sim_group):
                 print >> stderr, 'Error while reading', filename
                 continue
 
-        params = results['params']
-        samples = results['samples']
+        this_sim_params = results['params']
+        this_sim_samples = results['samples']
 
-        line_name = params[conf['line_param']]
-        y_values = samples[conf['y_sample']]
+        line_name = this_sim_params[conf['line_param']]
+        # this_sim_y_values = this_sim_samples[conf['y_sample']]
 
         if isinstance(conf['z_param'], (list, tuple)):
-            z = tuple([params[p] for p in conf['z_param']])
+            z = tuple([this_sim_params[p] for p in conf['z_param']])
         else:
-            z = params[conf['z_param']]
+            z = this_sim_params[conf['z_param']]
 
-        x = float(params[conf['x_param']])
+        x = float(this_sim_params[conf['x_param']])
 
-        if z not in parsed_results:
-            parsed_results[z] = {}
+        if z not in all_samples:
+            all_samples[z] = {}
 
-        if x not in parsed_results[z]:
-            parsed_results[z][x] = {}
+        if x not in all_samples[z]:
+            all_samples[z][x] = {}
 
-        assert line_name not in parsed_results[z][x]
+        if line_name not in all_samples[z][x]:
+            all_samples[z][x][line_name] = {}
 
-        parsed_results[z][x][line_name] = dict(avg=avg(y_values), err=err(y_values))
+        # if params['sched'] == OPPScheduler.__name__:
+        # Prune results
+        for sample_name, samples in this_sim_samples.items():
+            if sample_name not in all_samples[z][x][line_name]:
+                all_samples[z][x][line_name][sample_name] = []
+            all_samples[z][x][line_name][sample_name].extend(samples)
 
-        parsed_metadatas[z] = {k: dict(avg=avg(samples[k]), err=err(samples[k])) for k in samples}
-
-    return parsed_results, parsed_metadatas
+    return all_samples
 
 
 def parse_result_to_file(sim_group):
-    results, metadatas = do_pickle_parse(sim_group)
+    results = do_pickle_parse(sim_group)
     conf = result_groups[sim_group]
 
     line_label = conf['line_param']
     x_label = conf['x_param']
-    y_label = conf['y_sample']
+
+    if 'meta_samples' in conf:
+        meta_samples = conf['meta_samples']
+    else:
+        meta_samples = dict()
+
     z_param = conf['z_param']
     if isinstance(z_param, (tuple, list)):
         z_label = '-'.join(z_param)
@@ -149,79 +183,115 @@ def parse_result_to_file(sim_group):
         # Sort line names per translation
         line_names = list(sorted(line_names, key=ts))
 
-        # First row with column names
-        data = [map(ts, ["# " + x_label] + line_names)]
+        for y_label, y_funcs in conf['y_sample'].items():
 
-        y_min = 1
-        y_max = 0
+            if not isinstance(y_funcs, (tuple, list)):
+                y_funcs = [y_funcs]
 
-        for x in x_values:
-            avg_values = ['?'] * len(line_names)
-            err_values = ['?'] * len(line_names)
-            for line in line_names:
-                if line in results[z][x]:
-                    avg_val = results[z][x][line]['avg'] * Y_MULTIPLIER
-                    err_val = results[z][x][line]['err'] * Y_MULTIPLIER
-                    avg_values[line_names.index(line)] = avg_val
-                    err_values[line_names.index(line)] = err_val
-                    y_min = min(y_min, avg_val)
-                    y_max = max(y_max, avg_val)
-                else:
-                    print >> stderr, "Missing point %s:%s in %s with %s=%s" % (x, line, sim_group, z_label, z_str)
+            for y_func in y_funcs:
 
-            data.append(map(str, [x] + avg_values))
+                # First row with column names
+                data = [map(ts, ["# " + x_label] + line_names)]
 
-        dat_fname = sim_group + "_%s=%s.dat" % (z_label, z_str)
-        pic_fname = sim_group + "_%s=%s.pdf" % (z_label, z_str)
+                y_min = 1
+                y_max = 0
 
-        if not os.path.exists("plot_data"):
-            os.makedirs("plot_data")
+                meta_values = {k: [] for k in meta_samples.keys()}
 
-        if os.path.isfile("plot_data/" + pic_fname):
-            os.remove("plot_data/" + pic_fname)
+                for x in x_values:
+                    aggr_values = ['?'] * len(line_names)
+                    for line in line_names:
+                        if line in results[z][x]:
+                            if y_label in filter_funcs:
+                                filter_func = filter_funcs[y_label]
+                                if not filter_func(results[z][x][line]):
+                                    print >> stderr, \
+                                        "Skipping point %s:%s in %s with %s=%s because filter func %s failed" \
+                                        % (x, line, sim_group, z_label, z_str, filter_func.__name__)
+                                    continue
 
-        # Write gnuplot dat file
-        with open("plot_data/" + dat_fname, "w") as f:
+                            this_sim_samples = results[z][x][line]
 
-            print >> f, "# %s" % ts(sim_group)
-            print >> f, "# %s=%s" % (ts(z_label), z_str)
-            print >> f, "# %s" % ts(y_label)
+                            values = this_sim_samples[y_label]
 
-            # Print nicely, aligned in columns
-            col_width = max(len(word) for row in data for word in row) + 2  # padding
-            for row in data:
-                print >> f, "".join(word.ljust(col_width) for word in row)
+                            if y_label in map_funcs:
+                                values = map(map_funcs[y_label], values)
 
-        try:
-            pipe_conf = sim_params.sim_groups[sim_group]['pipe']
-            pipe_name = "pipe_wc" if pipe_conf["read_chunk"] == 0 else "pipe_rmt"
-        except:
-            pipe_name = 'n/a'
+                            aggr_val = y_func(values)
+                            aggr_values[line_names.index(line)] = aggr_val
+                            y_min = min(y_min, aggr_val)
+                            y_max = max(y_max, aggr_val)
 
-        title = "%s\\n%s=%s" % (ts(pipe_name), ts(z_label), z)
+                            for meta_sample_name in meta_samples.keys():
+                                meta_values[meta_sample_name].extend(this_sim_samples[meta_sample_name])
+                        else:
+                            print >> stderr, "Missing point %s:%s in %s with %s=%s" % (
+                                x, line, sim_group, z_label, z_str)
 
-        if len(META_KEYS) > 0:
-            metas_str = ", ".join(["%s=%s" % (ts(k), hnum(metadatas[z][k]['avg'])) for k in META_KEYS])
-            title += " (%s)" % metas_str
+                    data.append(map(str, [x] + aggr_values))
 
-        # Write gnuplot script
-        with open("plot_data/plot.script", "a") as ps:
+                dat_fname = sim_group + "_%s-%s_%s=%s.dat" % (y_label, y_func.__name__, z_label, z_str)
+                pic_fname = sim_group + "_%s-%s_%s=%s.pdf" % (y_label, y_func.__name__, z_label, z_str)
 
-            print >> ps, "\nset output '%s'" % pic_fname
+                if not os.path.exists("plot_data"):
+                    os.makedirs("plot_data")
 
-            print >> ps, "set key outside title '%s' box" % ts(line_label)
-            print >> ps, "set title  \"%s\"" % title
-            print >> ps, "set xlabel '%s'" % ts(x_label)
-            print >> ps, "set ylabel '%s'" % ts(y_label)
+                if os.path.isfile("plot_data/" + pic_fname):
+                    os.remove("plot_data/" + pic_fname)
 
-            u_str = "u 1:%d t '%s'"
-            if 'style' in conf:
-                u_str += " w %s" % conf['style']
+                # Write gnuplot dat file
+                with open("plot_data/" + dat_fname, "w") as f:
 
-            usings = [u_str % (i + 2, ts(line_names[i])) for i in range(len(line_names))]
-            using_str = ", \\\n\t'' ".join(usings)
+                    print >> f, "# %s" % ts(sim_group)
+                    print >> f, "# %s=%s" % (ts(z_label), z_str)
+                    print >> f, "# %s" % ts(y_label)
 
-            print >> ps, "plot '%s' %s" % (dat_fname, using_str)
+                    # Print nicely, aligned in columns
+                    col_width = max(len(word) for row in data for word in row) + 2  # padding
+                    for row in data:
+                        print >> f, "".join(word.ljust(col_width) for word in row)
+
+                title = "%s\\n%s=%s" % (ts(sim_group), ts(z_label), z)
+
+                meta_pieces = []
+                for meta_sample_name, meta_funcs in meta_samples.items():
+                    for meta_func in meta_funcs:
+                        meta_aggr_value = meta_func(meta_values[meta_sample_name])
+                        meta_pieces.append(
+                            "%s=%s (%s)" % (ts(meta_sample_name), hnum(meta_aggr_value), meta_func.__name__))
+
+                if len(meta_pieces) > 0:
+                    title += ", %s" % ', '.join(meta_pieces)
+
+                # Write gnuplot script
+                with open("plot_data/plot.script", "a") as ps:
+
+                    print >> ps, "\nset output '%s'" % pic_fname
+
+                    print >> ps, "set key outside title '%s' box" % ts(line_label)
+                    print >> ps, "set title  \"%s\"" % title
+                    print >> ps, "set xlabel '%s'" % ts(x_label)
+                    print >> ps, "set ylabel '%s (%s)'" % (ts(y_label), ts(y_func.__name__))
+
+                    if y_label in scales and scales[y_label] != 'lin':
+                        scale = scales[y_label]
+                        if scale == 'log10':
+                            print >> ps, "set logscale y"
+                            print >> ps, 'set format y "10^{%L}"'
+                        else:
+                            raise Exception("Unknown scale '%s' for y_label '%s'" % (scale, y_label))
+                    else:
+                        print >> ps, "unset logscale y"
+                        print >> ps, 'set format y "%g"'
+
+                    u_str = "u 1:%d t '%s'"
+                    if 'style' in conf:
+                        u_str += " w %s" % conf['style']
+
+                    usings = [u_str % (i + 2, ts(line_names[i])) for i in range(len(line_names))]
+                    using_str = ", \\\n\t'' ".join(usings)
+
+                    print >> ps, "plot '%s' %s" % (dat_fname, using_str)
 
 
 def main():
