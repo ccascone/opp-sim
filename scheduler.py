@@ -8,7 +8,7 @@ WORK, EMPTY, STALL, HAZARD = range(4)
 
 
 class OPPScheduler():
-    def __init__(self, Q, W, N, hash_func):
+    def __init__(self, Q, W, N, hash_func, quelen=0):
         # assert Q >= N, "Q must be greater or equal to N"
         assert Q > 0
         assert W > 0
@@ -17,6 +17,7 @@ class OPPScheduler():
         self.N = N
         self.W = W
         self.hash_func = hash_func
+        self.max_quelen = quelen
         self.queues = [deque(array('h', [])) for _ in range(Q)]
         self.hols = [None] * Q
         self.pipeline = deque([None] * N)
@@ -29,7 +30,8 @@ class OPPScheduler():
         self.last_result = -1
         self.clock = 0
         self.latencies = deque()
-        self.queue_util_peak = 0
+        self.queue_util_maxs = deque()
+        self.queue_util_sums = deque()
         self.locked_keys = [False] * self.W
 
     def accept(self, pkt):
@@ -42,12 +44,20 @@ class OPPScheduler():
         w = self._digest(pkt.update_key, self.W)
         p = (w, self.clock)
         # Head of line, otherwise enqueue
+        enqued = True
         if self.hols[q] is None:
             self.hols[q] = p
-        else:
+            self.backlog += 1
+        elif self.max_quelen == 0 or len(self.queues[q]) < self.max_quelen:
             self.queues[q].append(p)
-            self.queue_util_peak = max(self.queue_util_peak, len(self.queues[q]))
-        self.backlog += 1
+            self.backlog += 1
+        else:
+            enqued = False
+
+        self.queue_util_maxs.append(max(len(que) for que in self.queues))
+        self.queue_util_sums.append(self.backlog)
+
+        return enqued
 
     def execute_tick(self):
         self.last_result = self._execute_tick()
@@ -122,17 +132,18 @@ class OPPScheduler():
         self.latencies = deque()
         return latencies
 
-    def flush_queue_util_peak(self):
-        sample = self.queue_util_peak
-        self.queue_util_peak = 0
-        return sample
+    def flush_queue_utils(self):
+        result = dict(sum=self.queue_util_sums, max=self.queue_util_maxs)
+        self.queue_util_sums = deque()
+        self.queue_util_maxs = deque()
+        return result
 
     def key_count(self):
         return len(self.digests[self.Q])
 
 
 class HazardDetector:
-    def __init__(self, Q, W, N, hash_func):
+    def __init__(self, Q, W, N, hash_func, quelen):
         # assert Q >= N, "Q must be greater or equal to N"
         assert Q == W
         self.Q = Q
@@ -150,6 +161,7 @@ class HazardDetector:
         :param pkt: a SimPacket
         """
         self.the_pkt = pkt
+        return True
 
     def execute_tick(self):
         self.last_result = self._execute_tick()
@@ -197,10 +209,10 @@ class HazardDetector:
 
     def flush_latencies(self):
         # No latency in this scheduler
-        return []
+        return [0]
 
-    def flush_queue_util_peak(self):
-        return 0
+    def flush_queue_utils(self):
+        return dict(sum=[0], max=[0])
 
     def key_count(self):
         return len(self.digests)

@@ -61,14 +61,13 @@ class Simulator:
         self.threaded = None
         self.debug = None
         self.line_rate = None
-        self.line_rate = None
         self.time_stretch_factor = None
         self.max_samples = None
         self.mlen = None
 
     def provision(self, N, Q, sched, hashf, key, W=None,
                   clock_freq=0, read_chunk=0, line_rate_util=0.0, mlen=1, sim_group='all', sim_name=None,
-                  max_samples=5):
+                  max_samples=5, quelen=0):
         """
         Creates a new simulator instance.
         :param trace['day: Day of the traffic trace to use.
@@ -97,6 +96,10 @@ class Simulator:
                                       sched=sched.__name__, N=N, Q=Q, W=W,
                                       key=key.__name__, hash=hashf.__name__,
                                       mlen=mlen, clock=clock_freq, read_chunk=read_chunk, util=line_rate_util)
+        # To avoid redoing old sims
+        if quelen > 0:
+            self.sim_params['quelen'] = quelen
+
         self.label = '-'.join(["%s=%s" % (k, str(v)) for k, v in self.sim_params.items()])
 
         trace_params = {'trace_' + k: v for k, v in self.trace.items()}
@@ -116,7 +119,8 @@ class Simulator:
         self.W = W
         self.hash_func = hashf
         self.key_func = key
-        self.scheduler = sched(N=self.N, Q=self.Q, W=self.W, hash_func=self.hash_func)
+        self.quelen = quelen
+        self.scheduler = sched(N=self.N, Q=self.Q, W=self.W, hash_func=self.hash_func, quelen=self.quelen)
         self.read_chunk = float(read_chunk)
         assert 0 <= line_rate_util <= 1
         self.sim_util = float(line_rate_util)
@@ -260,6 +264,7 @@ class Simulator:
         # Report variables. These are reset every report interval.
         report_ts = start_ts
         report_pkt_count = 0
+        report_drop_count = 0
         report_sched_cycles = [0, 0, 0, 0]
         report_read_cycle_count = 0  # number of cycles spent reading packets from the ingress queue
         report_trfc_byte_count = 0  # number of bytes processed
@@ -295,6 +300,8 @@ class Simulator:
             if self.time_stretch_factor != 0:
                 pkt.ts_nano *= self.time_stretch_factor
 
+            extra_cycles_to_do = 0
+
             if start_pkt_ts == 0:
                 start_pkt_ts = pkt.ts_nano
                 report_trfc_last_ts = pkt.ts_nano
@@ -304,38 +311,37 @@ class Simulator:
                 sim_time = cycle * self.tick_duration
                 if pkt_relative_time > sim_time:
                     # Fast forward time till it's time to process this packet.
-                    extra_cycles_to_do = int(ceil((pkt_relative_time - sim_time) / self.tick_duration))
-                    cycle += extra_cycles_to_do
-                    for x in range(extra_cycles_to_do):
-                        result = self.scheduler.execute_tick()
-                        report_sched_cycles[result] += 1
-                        if result == scheduler.SKIP:
-                            report_sched_cycles[scheduler.EMPTY] += extra_cycles_to_do - x - 1
-                            break
+                    extra_cycles_to_do += int(ceil((pkt_relative_time - sim_time) / self.tick_duration))
                 else:
                     # Report any queuing delay at ingress ports.
                     report_queueing_delay += sim_time - pkt_relative_time
 
             # Packet size multiplier
-            pkt.iplen = transform_pkt_size(pkt.iplen, self.mlen)
+            # pkt.iplen = transform_pkt_size(pkt.iplen, self.mlen)
 
             if 0 < self.read_chunk < pkt.iplen:
                 # Need more than 1 clock cycle to read the packet
-                extra_cycles_to_do = int(ceil(pkt.iplen / self.read_chunk)) - 1
-                cycle += extra_cycles_to_do
+                extra_cycles_to_do += int(ceil(pkt.iplen / self.read_chunk)) - 1
                 report_read_cycle_count += extra_cycles_to_do
+
+            if extra_cycles_to_do:
+                cycle += extra_cycles_to_do
                 for x in range(extra_cycles_to_do):
                     result = self.scheduler.execute_tick()
-                    report_sched_cycles[result] += 1
                     if result == scheduler.SKIP:
-                        report_sched_cycles[scheduler.EMPTY] += extra_cycles_to_do - x - 1
+                        report_sched_cycles[scheduler.EMPTY] += extra_cycles_to_do - x
                         break
+                    else:
+                        report_sched_cycles[result] += 1
 
             # Time to process this packet headers in the OPP stage.
             # Key_func is supposed to store the extract key in the pkt object.
             self.key_func(pkt)
-            self.scheduler.accept(pkt)
+            if not self.scheduler.accept(pkt):
+                report_drop_count += 1
             result = self.scheduler.execute_tick()
+            if result == scheduler.SKIP:
+                result = scheduler.EMPTY
             report_sched_cycles[result] += 1
 
             cycle += 1
@@ -363,6 +369,7 @@ class Simulator:
                 pkt_count += report_pkt_count
 
                 thrpt = work_cycles / float(report_pkt_count)
+                drop_fract = report_drop_count / float(report_pkt_count)
 
                 util = report_read_cycle_count / float(cycle - report_last_cycle)
 
@@ -371,21 +378,32 @@ class Simulator:
                 p_quotas = [report_sched_cycles[x] / p_tot_cycles
                             for x in range(len(report_sched_cycles))]
 
-                latencies = self.scheduler.flush_latencies()
-                if len(latencies) == 0:
-                    latencies = [0]
-                latencies = sorted(latencies)
+                latencies = sorted(self.scheduler.flush_latencies())
+                queue_utils = self.scheduler.flush_queue_utils()
+                queue_util_max = sorted(queue_utils['max'])
+                queue_util_sum = sorted(queue_utils['sum'])
 
                 report_values = OrderedDict(
                     sched_thrpt=thrpt,
+                    sched_drop_fract=drop_fract,
                     sched_quota_work=p_quotas[scheduler.WORK],
                     sched_quota_hazard=p_quotas[scheduler.HAZARD],
                     sched_quota_stall=p_quotas[scheduler.STALL],
                     sched_quota_empty=p_quotas[scheduler.EMPTY],
-                    sched_queue_util_peak=self.scheduler.flush_queue_util_peak(),
+                    sched_queue_max_max=max(queue_util_max),
+                    sched_queue_max_avg=sum(queue_util_max) / len(queue_util_max),
+                    sched_queue_max_median=misc.percentile(queue_util_max, 0.5),
+                    sched_queue_max_95th=misc.percentile(queue_util_max, 0.95),
+                    sched_queue_max_99th=misc.percentile(queue_util_max, 0.99),
+                    sched_queue_sum_max=max(queue_util_sum),
+                    sched_queue_sum_avg=sum(queue_util_sum) / len(queue_util_sum),
+                    sched_queue_sum_median=misc.percentile(queue_util_sum, 0.5),
+                    sched_queue_sum_95th=misc.percentile(queue_util_sum, 0.95),
+                    sched_queue_sum_99th=misc.percentile(queue_util_sum, 0.99),
                     sched_latency_max=max(latencies),
                     sched_latency_avg=sum(latencies) / len(latencies),
                     sched_latency_median=misc.percentile(latencies, 0.5),
+                    sched_latency_95th=misc.percentile(latencies, 0.95),
                     sched_latency_99th=misc.percentile(latencies, 0.99),
                     sched_keys_count=self.scheduler.key_count(),
                     trfc_bitrate=trfc_bitrate,
@@ -415,6 +433,7 @@ class Simulator:
 
                 # Reset report variables.
                 report_pkt_count = 0
+                report_drop_count = 0
                 report_trfc_last_ts = pkt.ts_nano
                 report_trfc_byte_count = 0
                 report_sched_cycles = [0, 0, 0, 0]
@@ -458,9 +477,9 @@ if __name__ == '__main__':
     caida_trace = dict(provider='caida', link='equinix-chicago', day='20150219', time='125911', direction='X')
     fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
     sim = Simulator(caida_trace)
-    sim.provision(N=30, Q=1, W=8,
+    sim.provision(N=55, Q=4, W=4,
                   sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_5tuple,
-                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
+                  clock_freq=0, read_chunk=80, line_rate_util=0.5, mlen=1, quelen=100)
     # sim = Simulator(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7', N=3, Q=1, W=1,
     #                 sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
     #                 clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
