@@ -1,3 +1,5 @@
+import glob
+
 caida_user = ""
 caida_passwd = ""
 trace_dir = 'caida'
@@ -18,13 +20,17 @@ timestamps = [130000]
 
 
 def trace_fname(trace_opts, extension):
-    return "{link}.dir{direction}.{day}-{time}.UTC.anon.".format(**trace_opts) + extension
+    trace_opts['city'] = trace_opts['link'].split('-')[1]
+    return "{city}-{day}/{link}.dir{direction}.{day}-{time}.UTC.anon.".format(**trace_opts) + extension
 
 
 def parse_trace_fname(fname):
     """
     Returns direction, day, time, extension for the given trace file name.
     """
+    # drop subdir
+    fname_pieces = fname.split('/')
+    fname = fname_pieces[-1]
     pieces = fname.split('.', 5)
     assert (pieces[3], pieces[4]) == ('UTC', 'anon')
     date = pieces[2].split('-')
@@ -32,18 +38,55 @@ def parse_trace_fname(fname):
         ext = pieces[5]
     else:
         ext = ''
-    trace = dict(link=pieces[0], direction=pieces[1][-1], day=date[0], time=date[1])
+    trace = dict(provider='caida', link=pieces[0], direction=pieces[1][-1], day=date[0], time=date[1])
     return trace, ext
 
 
 # Read MD5 (to avoid red-downloading the same file)
-def read_md5_lines():
-    with open(trace_dir + '/' + "md5.md5") as f:
+def read_md5_lines(dir):
+    with open(trace_dir + '/' + dir + '/' + "md5.md5") as f:
         return f.readlines()
 
 
-md5s = {}
+def list_all_trace_couples(subdir):
+    """
+    Merges all bidirectional traffic traces found in trace dir / subdir.
+    """
+    fnames = glob.glob('./%s/%s/*.parsed' % (trace_dir, subdir))
+    trace_opts = [parse_trace_fname(fname)[0] for fname in fnames]
+    trace_per_date = dict()
+    for trace_opt in trace_opts:
+        date = "%s-%s" % (trace_opt['day'], trace_opt['time'])
+        if date not in trace_per_date:
+            trace_per_date[date] = []
+        trace_per_date[date].append(trace_opt)
 
-for line in read_md5_lines():
-    pieces = line.rstrip().split(" ")
-    md5s[pieces[0]] = pieces[1]
+    result = []
+
+    for date in sorted(trace_per_date.keys()):
+        num_traces = len(trace_per_date[date])
+        directs = [trace_per_date[date][i]['direction'] for i in range(num_traces)]
+        if 'X' in directs:
+            result.append(trace_per_date[date][directs.index('X')])
+        elif 'A' in directs and 'B' in directs:
+            opt = trace_per_date[date][directs.index('A')]
+            del opt['direction']
+            result.append(opt)
+
+    return result
+
+
+# md5s = {}
+#
+# for sub_dir in os.listdir(trace_dir):
+#     if os.path.isdir(sub_dir):
+#         for line in read_md5_lines(sub_dir):
+#             pieces = line.rstrip().split(" ")
+#             md5s[sub_dir + '/' + pieces[0]] = pieces[1]
+#
+#
+# print md5s
+
+
+if __name__ == '__main__':
+    print list_all_trace_couples('chicago-20150219')

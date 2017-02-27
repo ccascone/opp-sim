@@ -3,7 +3,6 @@ import time
 from struct import pack, unpack
 
 import dpkt
-import os
 import progressbar
 from dpkt.tcp import TCP
 from dpkt.udp import UDP
@@ -16,10 +15,11 @@ from conf import *
 from misc import was_downloaded
 
 
-def parse_packets_and_times(day, ts, direct):
+def parse_packets_and_times(trace_opts):
+    direct = trace_opts['direction']
     assert direct in ('A', 'B')
-    base_fname = trace_fname(direction=direct, day=day, time=ts, extension='')
-    label = "{direct}-{day}-{ts}".format(**locals())
+    base_fname = trace_fname(trace_opts=trace_opts, extension='')
+    label = "{direction}-{day}-{time}".format(**trace_opts)
     parsed_filename = base_fname + 'parsed'
     pkt_report_count = 0
     next_report_pkts = 1000
@@ -98,17 +98,17 @@ def parse_packets_and_times(day, ts, direct):
 
 
 def try_parsing(fname):
-    direction, day, ts, extension = parse_trace_fname(fname)
+    trace_opts, extension = parse_trace_fname(fname)
 
     if extension not in ('pcap.gz', 'times.gz', 'pcap', 'times'):
         return
 
-    pcapgz_fname = trace_fname(direction=direction, day=day, time=ts, extension='pcap.gz')
-    timesgz_fname = trace_fname(direction=direction, day=day, time=ts, extension='times.gz')
-    pcap_fname = trace_fname(direction=direction, day=day, time=ts, extension='pcap')
-    times_fname = trace_fname(direction=direction, day=day, time=ts, extension='times')
+    pcapgz_fname = trace_fname(trace_opts=trace_opts, extension='pcap.gz')
+    timesgz_fname = trace_fname(trace_opts=trace_opts, extension='times.gz')
+    pcap_fname = trace_fname(trace_opts=trace_opts, extension='pcap')
+    times_fname = trace_fname(trace_opts=trace_opts, extension='times')
 
-    # print "Trying parsing of {direction}-{day}-{ts}...".format(**locals())
+    # print "Trying parsing of {direction}-{day}-{time}...".format(**locals())
 
     other_fname = None
 
@@ -132,7 +132,7 @@ def try_parsing(fname):
             return
 
     # Trigger parsing
-    print "Starting parsing of {direction}-{day}-{ts}...".format(**locals())
+    print "Starting parsing of %s..." % pcap_fname
 
     for f in (fname, other_fname):
         if f.endswith('.gz'):
@@ -141,9 +141,9 @@ def try_parsing(fname):
             assert retcode == 0, "unable to gunzip " + f
 
     assert os.path.isfile(pcap_fname) and os.path.isfile(times_fname), \
-        "Unable to find '.pcap' or '.times' file for trace {direction}-{day}-{ts}".format(**locals())
+        "Unable to find '.pcap' or '.times' file for trace {direction}-{day}-{time}".format(**trace_opts)
     try:
-        parse_packets_and_times(day, ts, direction)
+        parse_packets_and_times(trace_opts=trace_opts)
         os.remove(pcap_fname)
         os.remove(times_fname)
     finally:
@@ -151,18 +151,20 @@ def try_parsing(fname):
 
 
 if __name__ == "__main__":
+    sub_dir = sys.argv[1]
+    assert sub_dir
     curr_dir = os.path.dirname(os.path.realpath(__file__))
     trace_fullpath = os.path.dirname(os.path.realpath(__file__)) + '/' + trace_dir
-    if not curr_dir.endswith(trace_dir):
+    if not curr_dir.endswith(sub_dir):
         os.chdir(trace_fullpath)
 
     while True:
         try:
-            print "This script will loop indefinitely looking for files to parse in %s...\n" \
-                  "Press CTRL-C to exit." % trace_fullpath
-            for f in os.listdir(trace_fullpath):
+            print "This script will loop indefinitely looking for files to parse in %s/%s...\n" \
+                  "Press CTRL-C to exit." % (trace_fullpath, sub_dir)
+            for f in os.listdir(trace_fullpath + '/' + sub_dir):
                 if f.endswith('pcap.gz') or f.endswith('times.gz') or f.endswith('pcap') or f.endswith('times'):
-                    try_parsing(f)
+                    try_parsing(sub_dir + '/' + f)
             time.sleep(10)
         except KeyboardInterrupt:
             sys.exit()

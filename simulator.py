@@ -4,10 +4,10 @@ import time
 from collections import OrderedDict
 from math import ceil
 from multiprocessing import Lock
+from sys import stderr
 
 import os
 
-import conf as caida_conf
 import misc
 import params
 import scheduler
@@ -89,8 +89,7 @@ class Simulator:
             W = Q
 
         # type: (basestring, int, int, int, function, function, int, int, int) -> None
-        trace_label = '_'.join(
-            [self.trace['provider']] + [self.trace[k] for k in sorted(self.trace.keys()) if k != 'provider'])
+        trace_label = misc.get_trace_label(self.trace)
 
         self.sim_params = OrderedDict(trace=trace_label,
                                       sched=sched.__name__, N=N, Q=Q, W=W,
@@ -139,18 +138,28 @@ class Simulator:
         self.max_samples = max_samples
         self.mlen = mlen
 
-    def _run(self):
-        success = False
-        if not self.debug and os.path.isfile(self.results_fname):
-
+    def need_to_run(self):
+        if self.debug:
+            return True
+        elif os.path.isfile(self.results_fname):
             with open(self.results_fname, "rb") as f:
                 try:
                     pickle.load(f)
-                    self._print("WARNING: simulation aborted, result already exists for this configuration")
-                    return True
+                    return False
                 except EOFError:
+                    print >> stderr, "Warn: found corrupted pickle %s, removing it" % self.results_fname
                     # Can't read file, do sim again
                     os.remove(self.results_fname)
+                    return True
+        else:
+            return True
+
+    def _run(self):
+        success = False
+
+        if not self.need_to_run():
+            self._print("WARNING: simulation aborted, result already exists for this configuration")
+            return True
 
         self._print("Running simulator %s" % self.label, False)
         start_time = time.time()
@@ -196,21 +205,7 @@ class Simulator:
 
     def do_simulation(self):
 
-        if self.trace['provider'] == 'caida':
-            if 'direction' in self.trace and self.trace['direction'] == 'X':
-                # Already merged trace
-                fname_a = './caida/' + caida_conf.trace_fname(self.trace, 'parsed')
-                fname_b = None
-            else:
-                fname_a = './caida/' + caida_conf.trace_fname(dict(direction='A', **self.trace), 'parsed')
-                fname_b = './caida/' + caida_conf.trace_fname(dict(direction='B', **self.trace), 'parsed')
-
-        elif self.trace['provider'] == 'fb':
-            fname_a = './fb/%s/%s-%s.parsed' % (self.trace['cluster'], self.trace['cluster'], self.trace['rack'])
-            fname_b = None
-
-        else:
-            raise SimException("Invalid trace provider %s" % self.trace['provider'])
+        fname_a, fname_b = misc.get_trace_fname(self.trace)
 
         if self.dumps is None:
             self.dumps = {fname_a: '', fname_b: ''}
@@ -424,12 +419,15 @@ class Simulator:
                     return
 
                 # Skip REPORT_STEP packets
-                idx_a += REPORT_STEP
-                idx_b += REPORT_STEP
-                if fname_a and (idx_a + MAX_PKT_REPORT_COUNT) >= tot_pkt_a \
-                        or fname_b and (idx_b + MAX_PKT_REPORT_COUNT) >= tot_pkt_b:
-                    # Not enough pkts
-                    return
+                if REPORT_STEP > 0:
+                    idx_a += REPORT_STEP
+                    idx_b += REPORT_STEP
+                    if fname_a and (idx_a + MAX_PKT_REPORT_COUNT) >= tot_pkt_a \
+                            or fname_b and (idx_b + MAX_PKT_REPORT_COUNT) >= tot_pkt_b:
+                        # Not enough pkts
+                        return
+                    start_pkt_ts = 0
+                    cycle = 0
 
                 # Reset report variables.
                 report_pkt_count = 0
@@ -441,6 +439,12 @@ class Simulator:
                 report_queueing_delay = 0
                 report_last_cycle = cycle
                 report_ts = time.time()
+
+                # Encourage garbage collection
+                del latencies
+                del queue_utils
+                del queue_util_max
+                del queue_util_sum
 
         # self.running is False
         raise SimException("Forced shutdown")
@@ -474,12 +478,13 @@ class Simulator:
 
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
-    caida_trace = dict(provider='caida', link='equinix-chicago', day='20150219', time='125911', direction='X')
+    caida_trace = dict(provider='caida', link='equinix-chicago', day='20150219', time='125911')
     fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
+    mawi_trace = dict(provider='mawi', name='201003081400')
     sim = Simulator(caida_trace)
-    sim.provision(N=55, Q=4, W=4,
-                  sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_5tuple,
-                  clock_freq=0, read_chunk=80, line_rate_util=0.5, mlen=1, quelen=100)
+    sim.provision(N=32, Q=0, W=0,
+                  sched=scheduler.HazardDetector, hashf=params.hash_crc16, key=params.key_const,
+                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
     # sim = Simulator(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7', N=3, Q=1, W=1,
     #                 sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
     #                 clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)

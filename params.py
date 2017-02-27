@@ -38,17 +38,17 @@ def key_ipsrc(pkt):
 
 
 def key_ipsrc8(pkt):
-    pkt.lookup_key = pkt.buf_slice(0, 1)
+    pkt.lookup_key = pkt.ipsrc8()
     pkt.update_key = pkt.lookup_key
 
 
 def key_ipsrc16(pkt):
-    pkt.lookup_key = pkt.buf_slice(0, 2)
+    pkt.lookup_key = pkt.ipsrc16()
     pkt.update_key = pkt.lookup_key
 
 
 def key_ipsrc24(pkt):
-    pkt.lookup_key = pkt.buf_slice(0, 2)
+    pkt.lookup_key = pkt.ipsrc24()
     pkt.update_key = pkt.lookup_key
 
 
@@ -59,6 +59,21 @@ def key_ipsrc_ipdst(pkt):
 
 def key_ipdst(pkt):
     pkt.lookup_key = pkt.ipdst()
+    pkt.update_key = pkt.lookup_key
+
+
+def key_ipdst8(pkt):
+    pkt.lookup_key = pkt.ipdst8()
+    pkt.update_key = pkt.lookup_key
+
+
+def key_ipdst16(pkt):
+    pkt.lookup_key = pkt.ipdst16()
+    pkt.update_key = pkt.lookup_key
+
+
+def key_ipdst24(pkt):
+    pkt.lookup_key = pkt.ipdst24()
     pkt.update_key = pkt.lookup_key
 
 

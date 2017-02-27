@@ -3,13 +3,13 @@ import time
 from multiprocessing import Pool, Value, cpu_count, Manager
 from random import shuffle
 
-import os
+import gc
 
 import sim_params
 from misc import hnum
 from simulator import Simulator
 
-MAX_PROCESS = cpu_count()
+MAX_PROCESS = 8
 
 
 class HashableDict(dict):
@@ -27,6 +27,18 @@ def eta(seconds):
             return "%.1f hours" % eta_hours
         else:
             return "%.1f days" % (eta_hours / 24.0)
+
+
+def check_need_to_run(p_list):
+    params = dict(**p_list)
+    trace = params['trace']
+    del params['trace']
+    s = Simulator(trace=trace)
+    s.provision(**params)
+    if s.need_to_run():
+        return p_list
+    else:
+        return None
 
 
 def worker(ppp):
@@ -58,6 +70,7 @@ def worker(ppp):
                 print "Completed %s/%s simulations [ETA %s / ~%s seconds per sim]..." \
                       % (len(tlist), num_sim, eta(rem_seconds), hnum(avg_time))
             sys.stdout.flush()
+            gc.collect()
 
 
 if __name__ == '__main__':
@@ -67,9 +80,16 @@ if __name__ == '__main__':
     time_list = mngr.list()
 
     param_list = sim_params.generate_param_dicts()
+    orig_num_simulators = len(param_list)
+
+    print "Asked to execute %d simulations, checking if we can skip some..." % orig_num_simulators
+
+    param_list = pool.map(check_need_to_run, param_list)
+    param_list = filter(lambda x: x is not None, param_list)
     num_simulators = len(param_list)
 
-    print "Will execute %d simulations (pid %d)..." % (num_simulators, os.getpgid(0))
+    print "%s were already executed, starting %s simulations..." \
+          % (orig_num_simulators - num_simulators, num_simulators)
 
     shuffle(param_list)
 

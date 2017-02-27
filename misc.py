@@ -1,10 +1,11 @@
 import hashlib
+import random
 
 import os
 from genericpath import isfile
 from math import floor, ceil
 
-from conf import trace_dir, md5s
+import conf as caida_conf
 from simpacket import SimPacket
 
 powers = [(9, 'G', 'n'), (6, 'M', 'u'), (3, 'K', 'm')]
@@ -52,6 +53,40 @@ def md5(fname):
     return hash_md5.hexdigest()
 
 
+def get_trace_fname(trace):
+    if trace['provider'] == 'caida':
+        if 'direction' in trace and trace['direction'] == 'X':
+            # Already merged trace
+            fname_a = './caida/' + caida_conf.trace_fname(trace, 'parsed')
+            fname_b = None
+        else:
+            fname_a = './caida/' + caida_conf.trace_fname(dict(direction='A', **trace), 'parsed')
+            fname_b = './caida/' + caida_conf.trace_fname(dict(direction='B', **trace), 'parsed')
+
+    elif trace['provider'] == 'fb':
+        fname_a = './fb/%s/%s-%s.parsed' % (trace['cluster'], trace['cluster'], trace['rack'])
+        fname_b = None
+
+    elif trace['provider'] == 'mawi':
+        fname_a = './mawi/%s.dump.parsed' % trace['name']
+        fname_b = None
+    else:
+        raise Exception("Invalid trace provider %s" % trace['provider'])
+
+    return fname_a, fname_b
+
+
+def get_trace_label(trace):
+    return '_'.join([trace['provider']] + [trace[k] for k in sorted(trace.keys()) if k != 'provider'])
+
+
+def alpha_pkt_size(pkt_size, alpha):
+    if random.randrange(0, 100) > alpha * 100 and pkt_size > 1000 * alpha:
+        return max(64, int(random.gauss(1, 1.5) * 300 * alpha + 64))
+    else:
+        return max(64, pkt_size)
+
+
 def evaluate_bitrate(dump):
     last_report_ts = 0
     byte_count = 0
@@ -73,11 +108,5 @@ def evaluate_bitrate(dump):
 
 def was_downloaded(fname):
     this_dir = os.path.dirname(os.path.realpath(__file__))
-    file_path = this_dir + '/' + trace_dir + '/' + fname
-    return isfile(file_path) and md5(file_path) == md5s[fname]
-
-
-if __name__ == '__main__':
-    result = evaluate_trace_bitrate('caida/equinix-chicago.dirA.20150219-125911.UTC.anon.parsed')
-    for key in result:
-        print "%s: %s" % (key, hnum(result[key]))
+    file_path = this_dir + '/' + caida_conf.trace_dir + '/' + fname
+    return isfile(file_path) # and md5(file_path) == caida_conf.md5s[fname]

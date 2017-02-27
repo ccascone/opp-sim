@@ -1,107 +1,89 @@
 # clock_freq, N, Q, sched, hash, key, read_chunk, line_rate_util
-from scheduler import HazardDetector, OPPScheduler
-from params import *
 from copy import copy
+
+from conf import list_all_trace_couples as caida_list_all_trace_couples
+from params import *
+from scheduler import OPPScheduler, HazardDetector
 
 max_samples = 30
 
-#defaults = dict(max_samples=max_samples)
+# defaults = dict(max_samples=max_samples)
 defaults = dict()
 
-caida_2015_chicago_dates = [('20150219', '125911'), ('20150219', '130000'), ('20150219', '130100'),
-                            ('20150219', '130200'), ('20150219', '130300'), ('20150219', '130400'),
-                            ('20150219', '130500'), ('20150219', '130600'), ('20150219', '130700'),
-                            ('20150219', '130800'), ('20150219', '130900'), ('20150219', '131000'),
-                            ('20150219', '131100'), ('20150219', '131200'), ('20150219', '131300'),
-                            ('20150219', '131400'), ('20150219', '131500'), ('20150219', '131600'),
-                            ('20150219', '131700'), ('20150219', '131800'), ('20150219', '131900'),
-                            ('20150219', '132000'), ('20150219', '132100'), ('20150219', '132200'),
-                            ('20150219', '132300'), ('20150219', '132400'), ('20150219', '132500'),
-                            ('20150219', '132600'), ('20150219', '132700'), ('20150219', '132800'),
-                            ('20150219', '132900'), ('20150219', '133000'), ('20150219', '133100'),
-                            ('20150219', '133200'), ('20150219', '133300'), ('20150219', '133400'),
-                            ('20150219', '133500'), ('20150219', '133600'), ('20150219', '133700'),
-                            ('20150219', '133800'), ('20150219', '133900'), ('20150219', '134000'),
-                            ('20150219', '134100'), ('20150219', '134200'), ('20150219', '134300'),
-                            ('20150219', '134400'), ('20150219', '134500'), ('20150219', '134600'),
-                            ('20150219', '134700'), ('20150219', '134800'), ('20150219', '134900'),
-                            ('20150219', '135000'), ('20150219', '135100'), ('20150219', '135200'),
-                            ('20150219', '135300'), ('20150219', '135400'), ('20150219', '135500'),
-                            ('20150219', '135600'), ('20150219', '135700'), ('20150219', '135800'),
-                            ('20150219', '135900'), ('20150219', '140000'), ('20150219', '140100'),
-                            ('20150219', '140200')]
+caida_chi15_traces = caida_list_all_trace_couples('chicago-20150219')
+caida_sj12_traces = caida_list_all_trace_couples('sanjose-20121115')
+mawi15_traces = [dict(provider='mawi', name='201507201400')]
 
-caida_chicago_template = dict(provider='caida', link='equinix-chicago', direction='X')
-
-caida_test_trace = dict(day='20150219', time='125911', **caida_chicago_template)
-caida_chicago_2015_traces = [dict(day=d, time=t, **caida_chicago_template) for d, t in caida_2015_chicago_dates]
-fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
-
-# Pipelines
-wc = dict(clock_freq=0, read_chunk=0, line_rate_util=1)
-rmt_100 = dict(clock_freq=10 ** 9, read_chunk=80, line_rate_util=1)
-rmt_b2b = dict(clock_freq=0, read_chunk=80, line_rate_util=1)
+# 10 most active racks from facebook
+fb_traces = [dict(provider='fb', cluster='B', rack=r) for r in
+             ['bace22a7', '791f21d2', '59b83d96', '079a31f6', '2d1c28e6', 'e27318d3', '7d9c6925', 'aee15954',
+              'dde385e4', 'febcb8d0']]
 
 # Key sets
 keys_all = [key_5tuple, key_ipsrc_ipdst, key_ipsrc, key_proto_dport, key_proto_sport, key_const]
 keys_worst = [key_ipsrc, key_proto_dport, key_proto_sport, key_const]
-keys_min = [key_proto_sport, key_5tuple, key_const]
-
-qw_conf_1 = [
-    dict(Q=1, W=[4, 8]),
-    dict(Q=4, W=[4, 8]),
-    dict(Q=8, W=[8, 16]),
-    dict(Q=16, W=[16, 32])
-]
-
-qw_conf_2 = [
-    dict(Q=1, W=[1, 4, 8]),
-    dict(Q=4, W=[4, 8]),
-    dict(Q=8, W=[8, 16]),
-]
+keys_min = [key_proto_sport, key_5tuple, key_ipdst, key_ipdst16, key_ipsrc, key_ipsrc16, key_const]
+keys_dim = [key_proto_sport, key_5tuple]
+keys_xx = [key_5tuple, key_ipsrc_ipdst, key_ipsrc, key_ipdst, key_ipsrc8, key_ipsrc16, key_ipsrc24, key_ipdst8,
+           key_ipdst16, key_ipdst24]
 
 qw_conf_3 = [
     dict(Q=1, W=[4, 8]),
     dict(Q=4, W=8),
     dict(Q=8, W=16),
+    dict(Q=16, W=16),
+    dict(Q=32, W=16),
 ]
 
+hazard_template = dict(
+    sched=HazardDetector, key=key_const, N=range(1, 33), Q=0, W=0, hashf=hash_crc16,
+    read_chunk=80, clock_freq=0)
+hazard_template_per_flow = dict(
+    sched=HazardDetector, key=[key_proto_sport, key_5tuple], N=range(1, 33), Q=0, W=0, hashf=hash_crc16,
+    read_chunk=80, clock_freq=0)
+thrpt_template = dict(
+    sched=OPPScheduler, key=keys_min, N=range(1, 41), qw=qw_conf_3, hashf=hash_crc16, read_chunk=80, clock_freq=0)
+dim_template = dict(
+    sched=OPPScheduler, key=keys_dim, N=range(1, 17) + [32, 48, 64, 128], Q=[4, 8, 16, 32], W=16, quelen=[10, 100],
+    hashf=hash_crc16, read_chunk=80, clock_freq=0)
+
+thrpt_template_1F = dict(
+    sched=OPPScheduler, key=key_const, N=range(1, 11), Q=1, W=1, hashf=hash_crc16, read_chunk=80, clock_freq=0)
+dim_template_1F = dict(
+    quelen=[10, 100], **thrpt_template_1F)
+
 sim_groups = {
-    # "hazard-wc-p-hash":
-    #     dict(pipe=wc, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=0, hashf=hash_perfect),
-    # "hazard-wc-min-hash":
-    #     dict(pipe=wc, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=[4, 8], hashf=hash_crc16),
-    # "hazard-rmt-p-hash":
-    #     dict(pipe=rmt, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=0, hashf=hash_perfect),
-    # "hazard-rmt-min-hash":
-    #     dict(pipe=rmt, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=[4, 8], hashf=hash_crc16),
-    # "opp2-wc":
-    #     dict(pipe=wc, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_1, hashf=hash_crc16),
-    # "opp2-wc-stress_W":
-    #     dict(pipe=wc, sched=OPPScheduler, key=keys_all, N=10, Q=1, W=[2 ** x for x in range(9)], hashf=hash_crc16),
-    # "opp2-rmt-stress_N":
-    #     dict(pipe=rmt_100, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_2, hashf=hash_crc16),
-    # "opp2-rmt-b2b-stress_chunk":
-    #     dict(sched=HazardDetector, key=key_const, N=10, Q=1, W=1, clock_freq=0, read_chunk=range(80, 1501, 142),
-    #          line_rate_util=1, hashf=hash_crc16),
-    # "opp-b2b-mlen-stress-hazard":
-    #     dict(sched=HazardDetector, key=key_const, N=range(1, 21), Q=1, W=1, clock_freq=0,
-    #          mlen=[x / 100.0 for x in range(0, 110, 10)], hashf=hash_crc16, read_chunk=80),
-    # "opp-b2b-mlen-stress-thrpt":
-    #     dict(sched=HazardDetector, key=key_const, N=range(1, 21), Q=1, W=1, clock_freq=0,
-    #          mlen=[x / 100.0 for x in range(0, 110, 10)], hashf=hash_crc16, read_chunk=80),
-    # "opp-b2b-fb-flow-hazard":
-    #     dict(trace=fb_trace, sched=HazardDetector, key=keys_all, N=range(1, 51), Q=1, W=1, clock_freq=0,
-    #          hashf=hash_crc16, read_chunk=80),
-    # "opp-b2b-fb-flow-thrpt":
-    #     dict(trace=fb_trace, sched=OPPScheduler, key=keys_all, N=range(1, 51), qw=qw_conf_2, clock_freq=0,
-    #          hashf=hash_crc16, read_chunk=80)
-    "caida-chi15-opp":
-        dict(trace=caida_chicago_2015_traces, sched=OPPScheduler, key=keys_min, N=range(1, 40), qw=qw_conf_3,
-             hashf=hash_crc16, read_chunk=80, clock_freq=0),
+    # Hazard Detector
+    
+    "caida-chi15-haz-1F": dict(trace=caida_chi15_traces, **hazard_template),
+    "caida-chi15-haz-MF": dict(trace=caida_chi15_traces, **hazard_template_per_flow),
+
+    "caida-sj12-haz-1F": dict(trace=caida_sj12_traces, **hazard_template),
+    "caida-sj12-haz-MF": dict(trace=caida_sj12_traces, **hazard_template_per_flow),
+
+    "mawi15-haz-1F": dict(trace=mawi15_traces, **hazard_template),
+    "mawi15-haz-MF": dict(trace=mawi15_traces, **hazard_template_per_flow),
+
+    "fb-haz-1F": dict(trace=fb_traces, **hazard_template),
+
+    # OPP
+
+    "caida-chi15-opp": dict(trace=caida_chi15_traces, **thrpt_template),
+    "caida-chi15-opp-dim": dict(trace=caida_chi15_traces, **dim_template),
+
+    "caida-sj12-opp": dict(trace=caida_sj12_traces, **thrpt_template),
+    "caida-sj12-opp-dim": dict(trace=caida_sj12_traces, **dim_template),
+
+    "fb-opp": dict(trace=fb_traces, **thrpt_template_1F),
+    "fb-opp-dim": dict(trace=fb_traces, **dim_template_1F),
+
+    # Run these with few cores
+    # "mawi15-opp": dict(trace=mawi15_traces, **thrpt_template),
+    # "mawi15-opp-dim": dict(trace=mawi15_traces, **dim_template),
 }
 
 noexp = ['trace']
+
 
 def explode_param_list(other_list, original_list, p_name=None):
     new_p_dicts = []
@@ -157,7 +139,7 @@ if __name__ == '__main__':
 
     col_widths = [0] * max(len(row) for row in data)
     for i in range(len(col_widths)):
-        col_widths[i] = max(len(row[i]) for row in data)
+        col_widths[i] = max(len(row[i]) if len(row) > i else 0 for row in data)
     for row in data:
         print "".join(row[i].ljust(col_widths[i] + 4) for i in range(len(row)))
 

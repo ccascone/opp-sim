@@ -17,7 +17,7 @@ class OPPScheduler():
         self.N = N
         self.W = W
         self.hash_func = hash_func
-        self.max_quelen = quelen
+        self.quelen = quelen
         self.queues = [deque(array('h', [])) for _ in range(Q)]
         self.hols = [None] * Q
         self.pipeline = deque([None] * N)
@@ -48,13 +48,15 @@ class OPPScheduler():
         if self.hols[q] is None:
             self.hols[q] = p
             self.backlog += 1
-        elif self.max_quelen == 0 or len(self.queues[q]) < self.max_quelen:
+        elif self.quelen == 0 or len(self.queues[q]) < self.quelen - 1:  # account for the hol spot
             self.queues[q].append(p)
             self.backlog += 1
         else:
             enqued = False
 
-        self.queue_util_maxs.append(max(len(que) for que in self.queues))
+        self.queue_util_maxs.append(
+            # account for the hol spot
+            max(len(self.queues[q]) + 1 if self.hols[q] is not None else 0 for q in self.range_Q))
         self.queue_util_sums.append(self.backlog)
 
         return enqued

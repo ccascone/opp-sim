@@ -17,9 +17,33 @@ class SimPacket():
         # type: () -> string
         return self.buf_slice(0, 4)
 
+    def ipsrc8(self):
+        # type: () -> string
+        return self.buf_slice(0, 1)
+
+    def ipsrc16(self):
+        # type: () -> string
+        return self.buf_slice(0, 2)
+
+    def ipsrc24(self):
+        # type: () -> string
+        return self.buf_slice(0, 3)
+
     def ipdst(self):
         # type: () -> string
         return self.buf_slice(4, 4)
+
+    def ipdst8(self):
+        # type: () -> string
+        return self.buf_slice(4, 1)
+
+    def ipdst16(self):
+        # type: () -> string
+        return self.buf_slice(4, 2)
+
+    def ipdst24(self):
+        # type: () -> string
+        return self.buf_slice(4, 3)
 
     def proto(self):
         # type: () -> string
