@@ -1,3 +1,4 @@
+import glob
 import hashlib
 import random
 
@@ -6,6 +7,7 @@ from genericpath import isfile
 from math import floor, ceil
 
 import conf as caida_conf
+from conf import trace_dir
 from simpacket import SimPacket
 
 powers = [(9, 'G', 'n'), (6, 'M', 'u'), (3, 'K', 'm')]
@@ -45,23 +47,15 @@ def percentile(N, percent, key=lambda x: x):
     return d0 + d1
 
 
-def md5(fname):
-    hash_md5 = hashlib.md5()
-    with open(fname, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            hash_md5.update(chunk)
-    return hash_md5.hexdigest()
-
-
 def get_trace_fname(trace):
     if trace['provider'] == 'caida':
         if 'direction' in trace and trace['direction'] == 'X':
             # Already merged trace
-            fname_a = './caida/' + caida_conf.trace_fname(trace, 'parsed')
+            fname_a = './caida/' + misc.caida_trace_fname(trace, 'parsed')
             fname_b = None
         else:
-            fname_a = './caida/' + caida_conf.trace_fname(dict(direction='A', **trace), 'parsed')
-            fname_b = './caida/' + caida_conf.trace_fname(dict(direction='B', **trace), 'parsed')
+            fname_a = './caida/' + misc.caida_trace_fname(dict(direction='A', **trace), 'parsed')
+            fname_b = './caida/' + misc.caida_trace_fname(dict(direction='B', **trace), 'parsed')
 
     elif trace['provider'] == 'fb':
         fname_a = './fb/%s/%s-%s.parsed' % (trace['cluster'], trace['cluster'], trace['rack'])
@@ -106,7 +100,55 @@ def evaluate_bitrate(dump):
     return dict(max=max(samples), min=min(samples), avg=(sum(samples) / len(samples)))
 
 
-def was_downloaded(fname):
+def caida_was_downloaded(fname):
     this_dir = os.path.dirname(os.path.realpath(__file__))
     file_path = this_dir + '/' + caida_conf.trace_dir + '/' + fname
     return isfile(file_path) # and md5(file_path) == caida_conf.md5s[fname]
+
+
+def caida_list_all_trace_couples(subdir):
+    fnames = glob.glob('./%s/%s/*.parsed' % (trace_dir, subdir))
+    trace_opts = [caida_parse_trace_fname(fname)[0] for fname in fnames]
+    trace_per_date = dict()
+    for trace_opt in trace_opts:
+        date = "%s-%s" % (trace_opt['day'], trace_opt['time'])
+        if date not in trace_per_date:
+            trace_per_date[date] = []
+        trace_per_date[date].append(trace_opt)
+
+    result = []
+
+    for date in sorted(trace_per_date.keys()):
+        num_traces = len(trace_per_date[date])
+        directs = [trace_per_date[date][i]['direction'] for i in range(num_traces)]
+        if 'X' in directs:
+            result.append(trace_per_date[date][directs.index('X')])
+        elif 'A' in directs and 'B' in directs:
+            opt = trace_per_date[date][directs.index('A')]
+            del opt['direction']
+            result.append(opt)
+
+    return result
+
+
+def caida_trace_fname(trace_opts, extension):
+    trace_opts['city'] = trace_opts['link'].split('-')[1]
+    return "{city}-{day}/{link}.dir{direction}.{day}-{time}.UTC.anon.".format(**trace_opts) + extension
+
+
+def caida_parse_trace_fname(fname):
+    """
+    Returns direction, day, time, extension for the given trace file name.
+    """
+    # drop subdir
+    fname_pieces = fname.split('/')
+    fname = fname_pieces[-1]
+    pieces = fname.split('.', 5)
+    assert (pieces[3], pieces[4]) == ('UTC', 'anon')
+    date = pieces[2].split('-')
+    if len(pieces) > 5:
+        ext = pieces[5]
+    else:
+        ext = ''
+    trace = dict(provider='caida', link=pieces[0], direction=pieces[1][-1], day=date[0], time=date[1])
+    return trace, ext

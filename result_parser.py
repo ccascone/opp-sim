@@ -5,22 +5,24 @@ from sys import stderr
 import datetime
 import time
 import os
+import sys
 import progressbar
 
 from misc import percentile, hnum
+from sim_params import keys_ccr
 
 translator = dict(
-    sched_quota_hazard="% concurrency hazards",
+    sched_quota_hazard="Fract data hazards",
     sched_thrpt="Pipeline throughput",
-    key_5tuple="5-tuple",
+    key_5tuple="5tuple",
     key_ipsrc_ipdst="ipsrc,ipdst",
     key_ipsrc="ipsrc",
-    key_ipsrc16="ipsrc/16",
+    key_ipsrc16="ipsrc16",
     key_ipdst="ipdst",
-    key_ipdst16="ipdst/16",
+    key_ipdst16="ipdst16",
     key_proto_dport="proto,dport",
     key_proto_sport="proto,sport",
-    key_const="* (constant)",
+    key_const="global",
     pipe_wc="Worst case (100% util with minimum size packets)",
     pipe_rmt="RMT model (640Gb/s with 95% util and variable size packets)",
     cycle_util="util",
@@ -105,6 +107,24 @@ def caida_ts(params):
     return time.mktime(dt.timetuple())
 
 
+p_filter = dict(
+    param_filter=dict(
+        key=['key_5tuple', 'key_ipdst', 'key_ipdst16', 'key_const']
+    )
+)
+
+group_template_hazard = dict(
+    y_sample={
+        'sched_quota_hazard': perc_99th
+    },
+    x_param='N',
+    z_param=('Q', 'W'),
+    z_filter=(0, 0),
+    line_param='key',
+    meta_samples={'cycle_util': [avg]},
+    **p_filter
+)
+
 group_template = dict(
     y_sample={
         'sched_thrpt': min,
@@ -116,62 +136,47 @@ group_template = dict(
     x_param='N',
     z_param=('Q', 'W'),
     line_param='key',
-    meta_samples={'cycle_util': [avg]})
+    meta_samples={'cycle_util': [avg]},
+    **p_filter)
 
 group_template_dim = dict(
     y_sample={
-        'sched_drop_fract': (perc_99th, median),
+        'sched_drop_fract': perc_99th,
         'sched_latency_99th': max,
         'sched_queue_max_99th': max,
         'sched_queue_sum_99th': max,
     },
     x_param='N',
-    z_param=('Q', 'W', 'quelen'),
+    z_param=('quelen', 'Q', 'W'),
     line_param='key',
     subdir_param=('quelen'),
     style='linespoints',
-    meta_samples={'cycle_util': [avg]})
+    meta_samples={'cycle_util': [avg]},
+    **p_filter)
 
-result_groups = [
-    # 'hazard-wc-p-hash':
-    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
-    # 'hazard-wc-min-hash':
-    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
-    # "hazard-rmt-p-hash":
-    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
-    # "hazard-rmt-min-hash":
-    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
-    # "opp-wc":
-    #     dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='key'),
-    # "opp-rmt-stress":
-    #     dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='key'),
-    # "opp2-wc":
-    #     dict(y_sample='sched_thrpt', x_param='N', z_param=('Q', 'W'), line_param='key'),
-    # "opp2-wc-stress_W":
-    #    dict(y_sample='sched_thrpt', x_param='W', z_param=('N', 'Q'), line_param='key'),
-    # "opp2-rmt-stress_N":
-    #     dict(y_sample='sched_thrpt', x_param='N', z_param=('Q', 'W'), line_param='key'),
-    # "opp-b2b-mlen-stress-hazard":
-    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='mlen', style='lines'),
-    # "opp-b2b-mlen-stress-thrpt":
-    #     dict(y_sample='sched_thrpt', x_param='N', z_param='Q', line_param='mlen'),
-    # "opp-b2b-fb-flow-hazard":
-    #     dict(y_sample='sched_quota_hazard', x_param='N', z_param='Q', line_param='key'),
-    # "opp-b2b-fb-flow-thrpt":
-    #     dict(y_sample='sched_thrpt', x_param='N', z_param=('Q', 'W'), line_param='key')
-    dict(sim_group='caida-chi15-opp', dest_dir='caida-chi15-opp', **group_template),
-    dict(sim_group='caida-chi15-opp-dim', dest_dir='caida-chi15-opp-dim', **group_template_dim),
-    dict(sim_group='mawi15-opp-dim', dest_dir='mawi15-opp-dim', **group_template_dim),
-    # dict(
-    #     sim_group='caida-chi15-opp',
-    #     dest_dir='caida-chi15-opp-time-serie',
-    #     y_sample={
-    #         'sched_thrpt': (min)
-    #     },
-    #     x_param=caida_ts,
-    #     z_param=('Q', 'W'),
-    #     line_param='key',
-    #     meta_samples={'cycle_util': [avg]}),
+result_confs = [
+    dict(sim_group='caida-chi15-haz-1F', **group_template_hazard),
+    dict(sim_group='caida-chi15-haz-MF', **group_template_hazard),
+
+    dict(sim_group='caida-sj12-haz-1F', **group_template_hazard),
+    dict(sim_group='caida-sj12-haz-MF', **group_template_hazard),
+
+    dict(sim_group='mawi15-haz-1F', **group_template_hazard),
+    dict(sim_group='mawi15-haz-MF', **group_template_hazard),
+
+    dict(sim_group='fb-haz-1F', **group_template_hazard),
+
+    dict(sim_group='caida-chi15-opp', **group_template),
+    dict(sim_group='caida-chi15-opp-dim', trace_name='chi-15', **group_template_dim),
+
+    dict(sim_group='caida-sj12-opp', **group_template),
+    dict(sim_group='caida-sj12-opp-dim', trace_name='sj-12', **group_template_dim),
+
+    dict(sim_group='mawi15-opp', **group_template),
+    dict(sim_group='mawi15-opp-dim', trace_name='mawi-15', **group_template_dim),
+
+    dict(sim_group='fb-opp', **group_template),
+    dict(sim_group='fb-opp-dim', trace_name='fb-web', **group_template_dim),
 ]
 
 pickle_parsed_cache = dict()
@@ -185,6 +190,8 @@ def do_pickle_parse(conf):
 
     if len(picklenames) == 0:
         return all_samples
+
+    filtered_count = 0
 
     bar = progressbar.ProgressBar()
     for filename in bar(picklenames):
@@ -203,6 +210,12 @@ def do_pickle_parse(conf):
         this_sim_params = results['params']
         this_sim_samples = results['samples']
 
+        if 'param_filter' in conf:
+            for param_key, param_values in conf['param_filter'].items():
+                if param_key in this_sim_params and this_sim_params[param_key] not in param_values:
+                    filtered_count += 1
+                    continue
+
         line_name = this_sim_params[conf['line_param']]
         # this_sim_y_values = this_sim_samples[conf['y_sample']]
 
@@ -215,7 +228,11 @@ def do_pickle_parse(conf):
         if callable(x_param):
             x = float(x_param(this_sim_params))
         else:
-            x = float(this_sim_params[conf['x_param']])
+            x = float(this_sim_params[x_param])
+            # FIXME remove me!
+            if x_param == 'N' and x > 30:
+                filtered_count += 1
+                continue
 
         if z not in all_samples:
             all_samples[z] = {}
@@ -226,19 +243,151 @@ def do_pickle_parse(conf):
         if line_name not in all_samples[z][x]:
             all_samples[z][x][line_name] = {}
 
-        # if params['sched'] == OPPScheduler.__name__:
-        # Prune results
         for sample_name, samples in this_sim_samples.items():
             if sample_name not in all_samples[z][x][line_name]:
                 all_samples[z][x][line_name][sample_name] = []
             all_samples[z][x][line_name][sample_name].extend(samples)
 
+    print " - warn: filtered %s results" % filtered_count
+
     return all_samples
 
 
+def parse_max_budget(confs, drop_tolerance=0.01, max_N=30):
+    max_n_values = dict()
+    sim_group_set = set()
+    line_name_set = set()
+    trace_names = dict()
+    for conf in confs:
+        sim_group = conf['sim_group']
+        trace_names[sim_group] = conf['trace_name']
+        sim_group_set.add(sim_group)
+        print "Parsing %s..." % sim_group
+        results = do_pickle_parse(conf)
+
+        print "done"
+
+        for z in results:
+            if z not in max_n_values:
+                max_n_values[z] = dict()
+            if sim_group not in max_n_values[z]:
+                max_n_values[z][sim_group] = dict()
+            for x in results[z]:
+                # is this the maximum X
+                for line_name, line_samples in results[z][x].items():
+                    if line_name not in [k.__name__ for k in keys_ccr]:
+                        continue
+                    line_name_set.add(line_name)
+                    if line_name not in max_n_values[z][sim_group]:
+                        max_n_values[z][sim_group][line_name] = {
+                            'N': -1,
+                            'sched_latency_99th': 0,
+                            'sched_queue_max_99th': 0,
+                            'sched_queue_sum_99th': 0}
+                    drop_fract = max(line_samples['sched_drop_fract'])
+                    current_record = max_n_values[z][sim_group][line_name]['N']
+                    if drop_fract <= drop_tolerance and x > current_record and x <= 30:
+                        max_n_values[z][sim_group][line_name] = {
+                            'N': x,
+                            'sched_latency_99th': max(line_samples['sched_latency_99th']),
+                            'sched_queue_max_99th': max(line_samples['sched_queue_max_99th']),
+                            'sched_queue_sum_99th': max(line_samples['sched_queue_sum_99th'])}
+
+    sim_groups_sorted = sorted(sim_group_set)
+    line_names_sorted = sorted(line_name_set)
+
+    drop_dir = 'drop_%s' % drop_tolerance
+
+    table_line_filter_out = []
+    table_trace_filter_out = []
+    table_z_str_filter_out = ['10-32-16', '100-32-16']
+
+    table_col_names = ['']
+    for sim_group in sim_groups_sorted:
+        if trace_names[sim_group] in table_trace_filter_out:
+            continue
+        for line_name in line_names_sorted:
+            if line_name in table_line_filter_out:
+                continue
+            table_col_names.append('%s-%s' % (trace_names[sim_group], ts(line_name)))
+
+    table_rows = dict()
+    for z in sorted(max_n_values.keys()):
+
+        z_param = conf['z_param']
+        if isinstance(z_param, (tuple, list)):
+            z_label = '-'.join(z_param)
+        else:
+            z_label = conf['z_param']
+
+        if isinstance(z, (tuple, list)):
+            z_str = '-'.join([str(i) for i in z])
+        else:
+            z_str = str(z)
+
+        table_col_names[0] = z_label
+
+        for param in ['N', 'sched_latency_99th', 'sched_queue_max_99th', 'sched_queue_sum_99th']:
+
+            if param not in table_rows:
+                table_rows[param] = [table_col_names]
+
+            if not os.path.isdir('plot_data/dat/max_N_per_drop/%s/%s=%s/' % (drop_dir, z_label, z_str)):
+                os.makedirs('plot_data/dat/max_N_per_drop/%s/%s=%s/' % (drop_dir, z_label, z_str))
+
+            dat_fname = "plot_data/dat/max_N_per_drop/%s/%s=%s/%s.dat" % (drop_dir, z_label, z_str, param)
+
+            dat_lines = [[''] + map(ts, line_names_sorted)]
+
+            table_row = [z_str]
+            for sim_group in sim_groups_sorted:
+                new_line = [trace_names[sim_group]]
+                for line_name in line_names_sorted:
+                    try:
+                        val = int(max_n_values[z][sim_group][line_name][param])
+                    except KeyError:
+                        val = '?'
+                    try:
+                        latency_val = int(max_n_values[z][sim_group][line_name]['sched_latency_99th'])
+                        latency_val = hnum(10 ** -9 * latency_val) + 's'
+                    except KeyError:
+                        latency_val = '?'
+                    new_line.append(str(val))
+                    if trace_names[sim_group] not in table_trace_filter_out \
+                            and line_name not in table_line_filter_out:
+                        table_row.append(str(val) + ' (%s)' % latency_val)
+                for i in range(1, len(sim_groups_sorted)):
+                    if new_line[i] != '?':
+                        dat_lines.append(new_line)
+                        break
+
+            if z_str not in table_z_str_filter_out:
+                table_rows[param].append(table_row)
+
+            with open(dat_fname, 'w') as f:
+                col_width = max(len(word) for line in dat_lines for word in line) + 2  # padding
+                for line in dat_lines:
+                    print >> f, "".join(word.ljust(col_width) for word in line)
+
+    for param, rows in table_rows.items():
+        if not os.path.isdir('plot_data/dat/max_N_per_drop/tables/%s' % drop_dir):
+            os.makedirs('plot_data/dat/max_N_per_drop/tables/%s' % drop_dir)
+
+        tex_name = "plot_data/dat/max_N_per_drop/tables/%s/%s.tex" % (drop_dir, param)
+
+        with open(tex_name, 'w') as f:
+            col_width = max(len(word) for row in rows for word in row) + 2  # padding
+            for row in rows:
+                print >> f, " & ".join(word.ljust(col_width) for word in row) + '\\\\ \\hline'
+
+
 def parse_result_to_file(conf):
-    sim_dest_dir = conf['dest_dir']
     sim_group = conf['sim_group']
+    if 'dest_dir' in conf:
+        sim_dest_dir = conf['dest_dir']
+    else:
+        sim_dest_dir = sim_group
+
     print "\n%s: parsing pickle files for sim group '%s'..." % (sim_dest_dir.upper(), sim_group)
 
     results = do_pickle_parse(conf)
@@ -421,7 +570,7 @@ def parse_result_to_file(conf):
                     print >> ps, "plot '%s' %s" % (dat_fname, using_str)
 
 
-def main():
+def main(prefix):
     if not os.path.exists("plot_data"):
         os.makedirs("plot_data")
 
@@ -430,9 +579,17 @@ def main():
         print >> ps, "set terminal pdf linewidth 2.5 size 3.4in,2in"
         print >> ps, "set grid"
 
-    for group in result_groups:
-        parse_result_to_file(group)
+    drop_confs = []
+    for conf in result_confs:
+        if not prefix or conf['sim_group'].startswith(prefix):
+            parse_result_to_file(conf)
+            if conf['sim_group'].endswith('-dim'):
+                drop_confs.append(conf)
+    for drop_tolerance in [0, 0.01, 0.001, 0.0001, 0.00001]:
+        parse_max_budget(drop_confs, drop_tolerance=drop_tolerance)
 
 
 if __name__ == '__main__':
-    main()
+    prefix = sys.argv[1] if len(sys.argv) > 1 else None
+    main(prefix)
+    # parse_max_budget([result_confs[12]])

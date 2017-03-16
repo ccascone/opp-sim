@@ -1,23 +1,22 @@
 # clock_freq, N, Q, sched, hash, key, read_chunk, line_rate_util
 from copy import copy
 
-from conf import list_all_trace_couples as caida_list_all_trace_couples
-from params import *
+from misc import caida_list_all_trace_couples as caida_list_all_trace_couples
+from hashkeys import *
 from scheduler import OPPScheduler, HazardDetector
-
-max_samples = 30
 
 # defaults = dict(max_samples=max_samples)
 defaults = dict()
 
 caida_chi15_traces = caida_list_all_trace_couples('chicago-20150219')
 caida_sj12_traces = caida_list_all_trace_couples('sanjose-20121115')
-mawi15_traces = [dict(provider='mawi', name='201507201400')]
+# mawi15_traces = [dict(provider='mawi', name='201507201400')]
+mawi15_traces = [dict(provider='mawi', name='201507201400-0%s' % str(i)) for i in [1, 2, 3]]
 
 # 10 most active racks from facebook
-fb_traces = [dict(provider='fb', cluster='B', rack=r) for r in
-             ['bace22a7', '791f21d2', '59b83d96', '079a31f6', '2d1c28e6', 'e27318d3', '7d9c6925', 'aee15954',
-              'dde385e4', 'febcb8d0']]
+fb_traces = [dict(provider='fb', cluster='B', rack=r) for r in ['bace22a7', '791f21d2', '59b83d96', '079a31f6',
+                                                                '2d1c28e6', 'e27318d3', '7d9c6925', 'aee15954',
+                                                                'dde385e4', 'febcb8d0']]
 
 # Key sets
 keys_all = [key_5tuple, key_ipsrc_ipdst, key_ipsrc, key_proto_dport, key_proto_sport, key_const]
@@ -25,36 +24,34 @@ keys_worst = [key_ipsrc, key_proto_dport, key_proto_sport, key_const]
 keys_min = [key_proto_sport, key_5tuple, key_ipdst, key_ipdst16, key_ipsrc, key_ipsrc16, key_const]
 keys_dim = [key_proto_sport, key_5tuple]
 keys_xx = [key_5tuple, key_ipsrc_ipdst, key_ipsrc, key_ipdst, key_ipsrc8, key_ipsrc16, key_ipsrc24, key_ipdst8,
-           key_ipdst16, key_ipdst24]
+           key_ipdst16, key_ipdst24, key_const]
 
-qw_conf_3 = [
-    dict(Q=1, W=[4, 8]),
-    dict(Q=4, W=8),
-    dict(Q=8, W=16),
-    dict(Q=16, W=16),
-    dict(Q=32, W=16),
-]
+# keys_ccr = [key_5tuple, key_ipdst, key_ipdst16, key_const]
+keys_ccr = keys_xx
 
 hazard_template = dict(
-    sched=HazardDetector, key=key_const, N=range(1, 33), Q=0, W=0, hashf=hash_crc16,
-    read_chunk=80, clock_freq=0)
+    sched=HazardDetector, key=key_const, N=range(1, 31), Q=0, W=0, hashf=hash_crc16, read_chunk=80, clock_freq=0)
 hazard_template_per_flow = dict(
-    sched=HazardDetector, key=[key_proto_sport, key_5tuple], N=range(1, 33), Q=0, W=0, hashf=hash_crc16,
-    read_chunk=80, clock_freq=0)
+    sched=HazardDetector, key=keys_ccr, N=range(1, 31), Q=0, W=0, hashf=hash_crc16, read_chunk=80, clock_freq=0)
+
 thrpt_template = dict(
-    sched=OPPScheduler, key=keys_min, N=range(1, 41), qw=qw_conf_3, hashf=hash_crc16, read_chunk=80, clock_freq=0)
-dim_template = dict(
-    sched=OPPScheduler, key=keys_dim, N=range(1, 17) + [32, 48, 64, 128], Q=[4, 8, 16, 32], W=16, quelen=[10, 100],
-    hashf=hash_crc16, read_chunk=80, clock_freq=0)
+    sched=OPPScheduler, key=keys_ccr, N=range(1, 51), Q=[1, 4, 8, 16], W=16, hashf=hash_crc16, read_chunk=80,
+    clock_freq=0, thrpt_tolerance=0.8)
 
 thrpt_template_1F = dict(
-    sched=OPPScheduler, key=key_const, N=range(1, 11), Q=1, W=1, hashf=hash_crc16, read_chunk=80, clock_freq=0)
+    sched=OPPScheduler, key=key_const, N=range(1, 11), Q=1, W=1, hashf=hash_crc16, read_chunk=80, clock_freq=0,
+    thrpt_tolerance=0.8)
+
+dim_template = dict(
+    sched=OPPScheduler, key=keys_ccr, N=range(1, 51), Q=[1, 4, 8, 16], W=16, quelen=[10, 50, 100],
+    hashf=hash_crc16, read_chunk=80, clock_freq=0, drop_tolerance=0.02)
+
 dim_template_1F = dict(
-    quelen=[10, 100], **thrpt_template_1F)
+    quelen=[10, 50, 100], **thrpt_template_1F)
 
 sim_groups = {
     # Hazard Detector
-    
+
     "caida-chi15-haz-1F": dict(trace=caida_chi15_traces, **hazard_template),
     "caida-chi15-haz-MF": dict(trace=caida_chi15_traces, **hazard_template_per_flow),
 
@@ -77,9 +74,8 @@ sim_groups = {
     "fb-opp": dict(trace=fb_traces, **thrpt_template_1F),
     "fb-opp-dim": dict(trace=fb_traces, **dim_template_1F),
 
-    # Run these with few cores
-    # "mawi15-opp": dict(trace=mawi15_traces, **thrpt_template),
-    # "mawi15-opp-dim": dict(trace=mawi15_traces, **dim_template),
+    "mawi15-opp": dict(trace=mawi15_traces, **thrpt_template),
+    "mawi15-opp-dim": dict(trace=mawi15_traces, **dim_template)
 }
 
 noexp = ['trace']

@@ -9,7 +9,7 @@ from sys import stderr
 import os
 
 import misc
-import params
+import hashkeys
 import scheduler
 from simpacket import SimPacket
 
@@ -64,10 +64,12 @@ class Simulator:
         self.time_stretch_factor = None
         self.max_samples = None
         self.mlen = None
+        self.drop_tolerance = None
+        self.thrpt_tolerance = None
 
     def provision(self, N, Q, sched, hashf, key, W=None,
                   clock_freq=0, read_chunk=0, line_rate_util=0.0, mlen=1, sim_group='all', sim_name=None,
-                  max_samples=5, quelen=0):
+                  max_samples=5, quelen=0, drop_tolerance=1.0, thrpt_tolerance=0.0):
         """
         Creates a new simulator instance.
         :param trace['day: Day of the traffic trace to use.
@@ -95,11 +97,16 @@ class Simulator:
                                       sched=sched.__name__, N=N, Q=Q, W=W,
                                       key=key.__name__, hash=hashf.__name__,
                                       mlen=mlen, clock=clock_freq, read_chunk=read_chunk, util=line_rate_util)
+
         # To avoid redoing old sims
         if quelen > 0:
             self.sim_params['quelen'] = quelen
 
         self.label = '-'.join(["%s=%s" % (k, str(v)) for k, v in self.sim_params.items()])
+
+        self.sim_params['max_samples'] = max_samples
+        self.sim_params['drop_tolerance'] = drop_tolerance
+        self.sim_params['thrpt_tolerance'] = thrpt_tolerance
 
         trace_params = {'trace_' + k: v for k, v in self.trace.items()}
         self.sim_params = dict(self.sim_params)
@@ -137,6 +144,8 @@ class Simulator:
         self.time_stretch_factor = 0
         self.max_samples = max_samples
         self.mlen = mlen
+        self.drop_tolerance = drop_tolerance
+        self.thrpt_tolerance = thrpt_tolerance
 
     def need_to_run(self):
         if self.debug:
@@ -418,10 +427,24 @@ class Simulator:
                 if 0 < self.max_samples == sample_count:
                     return
 
+                if self.drop_tolerance < 1 and drop_fract > self.drop_tolerance:
+                    # No need to collect other samples.
+                    self._print("Interrupted because drop_fract=%s is below tolerance level of %s..."
+                                % (misc.hnum(drop_fract), misc.hnum(self.drop_tolerance)))
+                    return
+
+                if self.thrpt_tolerance > 0 and thrpt < self.thrpt_tolerance:
+                    # No need to collect other samples.
+                    self._print("Interrupted because thrpt=%s is below tolerance level of %s..."
+                                % (misc.hnum(thrpt), misc.hnum(self.thrpt_tolerance)))
+                    return
+
                 # Skip REPORT_STEP packets
                 if REPORT_STEP > 0:
-                    idx_a += REPORT_STEP
-                    idx_b += REPORT_STEP
+                    relative_step = REPORT_STEP / tot_pkts
+
+                    idx_a += int(tot_pkt_a * relative_step)
+                    idx_b += int(tot_pkt_b * relative_step)
                     if fname_a and (idx_a + MAX_PKT_REPORT_COUNT) >= tot_pkt_a \
                             or fname_b and (idx_b + MAX_PKT_REPORT_COUNT) >= tot_pkt_b:
                         # Not enough pkts
@@ -478,13 +501,13 @@ class Simulator:
 
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
-    caida_trace = dict(provider='caida', link='equinix-chicago', day='20150219', time='125911')
+    caida_trace = dict(provider='caida', link='equinix-chicago', day='20150219', time='130000', direction='X')
     fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
     mawi_trace = dict(provider='mawi', name='201003081400')
     sim = Simulator(caida_trace)
-    sim.provision(N=32, Q=0, W=0,
-                  sched=scheduler.HazardDetector, hashf=params.hash_crc16, key=params.key_const,
-                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
+    sim.provision(N=30, Q=8, W=16,
+                  sched=scheduler.OPPScheduler, hashf=hashkeys.hash_crc16, key=hashkeys.key_ipdst16,
+                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1, quelen=1, thrpt_tolerance=0.95)
     # sim = Simulator(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7', N=3, Q=1, W=1,
     #                 sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
     #                 clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)

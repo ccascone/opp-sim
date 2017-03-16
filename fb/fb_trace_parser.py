@@ -203,7 +203,7 @@ def parse_cluster(cluster):
 if __name__ == "__main__":
     for cluster in ('A', 'B', 'C'):
         curr_dir = os.path.dirname(os.path.realpath(__file__))
-        trace_fullpath = os.path.dirname(os.path.realpath(__file__)) + '/fb/%s' % cluster
+        trace_fullpath = os.path.dirname(os.path.realpath(__file__)) + '/' + cluster
         if not os.path.isdir(trace_fullpath):
             continue
         if not curr_dir.endswith('fb/%s' % cluster):

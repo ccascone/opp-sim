@@ -6,15 +6,12 @@ import dpkt
 import os
 import progressbar
 from dpkt.ip import IP
-from dpkt.ip6 import IP6
 from dpkt.tcp import TCP
 from dpkt.udp import UDP
 from progressbar import Bar
 from progressbar import ETA
 from progressbar import FileTransferSpeed
 from progressbar import Percentage
-
-from misc import was_downloaded
 
 
 def parse_packets(fname):
@@ -46,8 +43,6 @@ def parse_packets(fname):
             i += 1
             pkt_report_count += 1
             byte_total_count += len(data)
-
-            eth = dpkt.ethernet.Ethernet(data)
 
             try:
                 eth = dpkt.ethernet.Ethernet(data)
@@ -99,7 +94,7 @@ def parse_packets(fname):
 
 if __name__ == "__main__":
     curr_dir = os.path.dirname(os.path.realpath(__file__))
-    trace_fullpath = os.path.dirname(os.path.realpath(__file__)) + '/mawi'
+    trace_fullpath = os.path.dirname(os.path.realpath(__file__))
     if not curr_dir.endswith('mawi'):
         os.chdir(trace_fullpath)
 
