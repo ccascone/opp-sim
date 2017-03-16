@@ -1,13 +1,7 @@
 pypyenv
-caida
-!caida/md5.md5
 .idea
 *.pyc
 results/*
-figs/*
 simulator.log
 parse_report.txt
 plot_data
-fb/A
-fb/B
-fb/C
