@@ -52,13 +52,12 @@ def worker(ppp):
 
     shuffle(p_list)
 
-    for params in p_list:
-        del params['trace']
-        s.provision(**params)
+    for sim_param_dict in p_list:
+        del sim_param_dict['trace']
+        s.provision(**sim_param_dict)
         start_time = time.time()
         success = s.run(threaded=True, debug=False)
         delta_time = time.time() - start_time
-        count.value += 1
         if not success:
             print "Detected error while running simulation, check simulator.log"
             tlist.append(None)
@@ -73,8 +72,7 @@ def worker(ppp):
         gc.collect()
 
 
-if __name__ == '__main__':
-    count = Value('i', 0)
+def main():
     pool = Pool(MAX_PROCESS)
     mngr = Manager()
     time_list = mngr.list()
@@ -123,3 +121,6 @@ if __name__ == '__main__':
     pool.map(worker, worker_params)
 
     print "All done!"
+
+if __name__ == '__main__':
+    main()

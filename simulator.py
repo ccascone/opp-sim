@@ -1,5 +1,4 @@
 import pickle
-import random
 import time
 from collections import OrderedDict
 from math import ceil
@@ -8,28 +7,16 @@ from sys import stderr
 
 import os
 
-import misc
 import hashkeys
+import misc
 import scheduler
+from sim_params import caida_chi15_traces
 from simpacket import SimPacket
 
 lock = Lock()
 
 MAX_PKT_REPORT_COUNT = 100000
 REPORT_STEP = MAX_PKT_REPORT_COUNT * 100
-
-
-def transform_pkt_size(len, alpha):
-    """
-    Packet size tranform function as per the NSDI poster.
-    :param len:
-    :param alpha:
-    :return:
-    """
-    if random.randrange(0, 100) > alpha * 100 and len > 1000 * alpha:
-        return max(64, int(random.gauss(1, 1.5) * 300 * alpha + 64))
-    else:
-        return max(64, len)
 
 
 class SimException(Exception):
@@ -501,7 +488,7 @@ class Simulator:
 
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
-    caida_trace = dict(provider='caida', link='equinix-chicago', day='20150219', time='130000', direction='X')
+    caida_trace = caida_chi15_traces[0]
     fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
     mawi_trace = dict(provider='mawi', name='201003081400')
     sim = Simulator(caida_trace)

@@ -1,8 +1,6 @@
 from PyCRC import CRC16
 from PyCRC import CRC32
 
-import conf
-
 crc16c = CRC16.CRC16()
 crc32c = CRC32.CRC32()
 
