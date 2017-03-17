@@ -6,10 +6,10 @@ from random import shuffle
 import gc
 
 import sim_params
-from misc import hnum
+from misc import hnum, get_trace_label
 from simulator import Simulator
 
-MAX_PROCESS = 13
+MAX_PROCESS = cpu_count()
 
 
 class HashableDict(dict):
@@ -48,16 +48,28 @@ def worker(ppp):
     assert len(trace_set) == 1
     trace = trace_set.pop()
 
+    trace_label = get_trace_label(trace)
+    local_num_sim = len(p_list)
+
+    print "Starting worker on trace file %s (%s simulations)..." % (trace_label, len(p_list))
+
     s = Simulator(trace=trace)
 
     shuffle(p_list)
+
+    local_count = 0
 
     for sim_param_dict in p_list:
         del sim_param_dict['trace']
         s.provision(**sim_param_dict)
         start_time = time.time()
         success = s.run(threaded=True, debug=False)
-        delta_time = time.time() - start_time
+        local_count += 1
+        if local_count > 1:
+            delta_time = time.time() - start_time
+        else:
+            # first time it takes a while to load the trace, use dummy value
+            delta_time = 3
         if not success:
             print "Detected error while running simulation, check simulator.log"
             tlist.append(None)
@@ -66,8 +78,8 @@ def worker(ppp):
             times = [t for t in tlist if t is not None]
             avg_time = sum(times) / len(times)
             rem_seconds = ((num_sim - len(times)) * avg_time) / float(MAX_PROCESS)
-            print "Completed %s/%s simulations [ETA %s / ~%s seconds per sim]..." \
-                  % (len(tlist), num_sim, eta(rem_seconds), hnum(avg_time))
+            print "Completed %s/%s (ETA %s | ~%s sec/sim) [thread:%s %s/%s]..." \
+                  % (len(tlist), num_sim, eta(rem_seconds), hnum(avg_time), trace_label, local_count, local_num_sim)
         sys.stdout.flush()
         gc.collect()
 
