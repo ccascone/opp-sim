@@ -25,9 +25,9 @@ keys_min = [key_proto_sport, key_5tuple, key_ipdst, key_ipdst16, key_ipsrc, key_
 keys_dim = [key_proto_sport, key_5tuple]
 keys_xx = [key_5tuple, key_ipsrc_ipdst, key_ipsrc, key_ipdst, key_ipsrc8, key_ipsrc16, key_ipsrc24, key_ipdst8,
            key_ipdst16, key_ipdst24, key_const]
+keys_ccr = [key_const, key_5tuple, key_ipdst, key_ipdst16, key_ipsrc_ipdst]
 
 # keys_ccr = [key_5tuple, key_ipdst, key_ipdst16, key_const]
-keys_ccr = keys_xx
 
 hazard_template = dict(
     sched=HazardDetector, key=key_const, N=range(1, 31), Q=0, W=0, hashf=hash_crc16, read_chunk=80, clock_freq=0)
@@ -35,7 +35,7 @@ hazard_template_per_flow = dict(
     sched=HazardDetector, key=keys_ccr, N=range(1, 31), Q=0, W=0, hashf=hash_crc16, read_chunk=80, clock_freq=0)
 
 thrpt_template = dict(
-    sched=OPPScheduler, key=keys_ccr, N=range(1, 31), Q=[1, 4, 8, 16], W=16, hashf=hash_crc16, read_chunk=80,
+    sched=OPPScheduler, key=keys_ccr, N=range(1, 31), Q=[1, 4, 8, 16], W=[16], hashf=hash_crc16, read_chunk=80,
     clock_freq=0, thrpt_tolerance=0.8)
 
 thrpt_template_1F = dict(
@@ -43,7 +43,7 @@ thrpt_template_1F = dict(
     thrpt_tolerance=0.8)
 
 dim_template = dict(
-    sched=OPPScheduler, key=keys_ccr, N=range(1, 31), Q=[1, 4, 8, 16], W=16, quelen=[10, 100],
+    sched=OPPScheduler, key=keys_ccr, N=range(1, 31), Q=[1, 4, 8, 16], W=[16], quelen=[10, 100],
     hashf=hash_crc16, read_chunk=80, clock_freq=0, drop_tolerance=0.02)
 
 dim_template_1F = dict(

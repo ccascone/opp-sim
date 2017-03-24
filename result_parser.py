@@ -12,23 +12,25 @@ from misc import percentile, hnum
 from sim_params import keys_ccr
 
 translator = dict(
-    sched_quota_hazard="Fract data hazards",
-    sched_thrpt="Pipeline throughput",
-    key_5tuple="5tuple",
+    sched_quota_hazard="Fract. data hazards",
+    sched_thrpt="Throughput",
+    key_5tuple="5-tuple",
     key_ipsrc_ipdst="ipsrc,ipdst",
     key_ipsrc="ipsrc",
-    key_ipsrc16="ipsrc16",
+    key_ipsrc16="ipsrc/16",
     key_ipdst="ipdst",
-    key_ipdst16="ipdst16",
+    key_ipdst16="ipdst/16",
     key_proto_dport="proto,dport",
     key_proto_sport="proto,sport",
-    key_const="*(global)",
-    pipe_wc="Worst case (100% util with minimum size packets)",
-    pipe_rmt="RMT model (640Gb/s with 95% util and variable size packets)",
+    key_const="* (global)",
     cycle_util="util",
     key="Flow key",
     N="Pipeline depth (clock cycles)",
-    perc_99th="99th"
+    perc_99th="99^{th}%",
+    sched_latency_99th="99^{th}\% latency (cycles)",
+    sched_queue_max_99th="99^{th}\% max queue occupancy",
+    sched_queue_sum_99th="99^{th}\% queue occupancy sum",
+    sched_drop_fract="Fract. packets dropped"
 )
 
 
@@ -544,7 +546,7 @@ def parse_result_to_file(conf):
                     print >> ps, "set key outside title '%s' box" % ts(line_label)
                     print >> ps, "set title  \"%s\"" % title
                     print >> ps, "set xlabel '%s'" % ts(x_label)
-                    print >> ps, "set ylabel '%s (%s)'" % (ts(y_label), ts(y_func.__name__))
+                    print >> ps, "set ylabel '%s [%s]'" % (ts(y_label), ts(y_func.__name__))
 
                     scale = get_scale(y_label)
                     if scale:
@@ -576,7 +578,7 @@ def main(prefix):
 
     with open("plot_data/plot.gp", "w") as ps:
         print >> ps, "# gnuplot script"
-        print >> ps, "set terminal pdf linewidth 2.5 size 3.4in,2in"
+        print >> ps, "set terminal pdf linewidth 1.5 size 3.4in,2in"
         print >> ps, "set grid"
 
     drop_confs = []
