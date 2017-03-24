@@ -2,11 +2,9 @@
 
 This repository contains the code used in the paper:
 
-**Relaxing state-access constraints in stateful programmable data planes**
-*Carmelo Cascone, Roberto Bifulco, Salvatore Pontarelli, Antonio Capone*
-https://arxiv.org/abs/1703.05442
+C. Cascone, R. Bifulco, S. Pontarelli, A. Capone, *"Relaxing state-access constraints in stateful programmable data planes."* (https://arxiv.org/abs/1703.05442)
 
-*Documentation is still work in progress*
+*Documentation on how to use the simulator is still work in progress*
 
 ## Simulation results
 
