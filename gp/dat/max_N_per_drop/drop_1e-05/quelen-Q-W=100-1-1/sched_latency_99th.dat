@@ -1,2 +1,2 @@
-            5-tuple     * (global)  ipdst       ipdst/16    
-fb-web      ?           10          ?           ?           
+             5-tuple      * (global)   ipdst        ipdst/16     ipsrc,ipdst  
+fb-web       ?            10           ?            ?            ?            

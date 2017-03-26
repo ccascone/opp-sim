@@ -1,4 +1,4 @@
-            5-tuple     * (global)  ipdst       ipdst/16    
-chi-15      175         282         192         320         
-sj-12       526         0           79          77          
-mawi-15     41          60          52          135         
+             5-tuple      * (global)   ipdst        ipdst/16     ipsrc,ipdst  
+chi-15       175          282          192          320          186          
+sj-12        526          0            79           77           499          
+mawi-15      41           60           52           135          41           
