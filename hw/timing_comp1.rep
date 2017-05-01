@@ -1,0 +1,48 @@
+ 
+****************************************
+Report : timing
+        -path full
+        -delay max
+        -max_paths 1
+Design : comp1
+Version: F-2011.09-SP4
+Date   : Thu Dec 27 19:52:16 2012
+****************************************
+
+Operating Conditions: typical   Library: gscl45nm
+Wire Load Model Mode: top
+
+  Startpoint: x[1] (input port clocked by vclk)
+  Endpoint: o (output port clocked by vclk)
+  Path Group: vclk
+  Path Type: max
+
+  Point                                    Incr       Path
+  -----------------------------------------------------------
+  clock vclk (rise edge)                   0.00       0.00
+  clock network delay (ideal)              0.00       0.00
+  input external delay                     0.00       0.00 r
+  x[1] (in)                                0.03       0.03 r
+  U239/Y (XNOR2X1)                         0.03       0.06 f
+  U195/Y (AND2X2)                          0.04       0.09 f
+  U194/Y (NAND3X1)                         0.03       0.12 r
+  U167/Y (NAND2X1)                         0.02       0.14 f
+  U166/Y (AOI21X1)                         0.02       0.16 r
+  U165/Y (NAND2X1)                         0.02       0.18 f
+  U164/Y (NOR2X1)                          0.03       0.21 r
+  U178/Y (AOI22X1)                         0.03       0.24 f
+  o (out)                                  0.00       0.24 f
+  data arrival time                                   0.24
+
+  clock vclk (rise edge)                   0.25       0.25
+  clock network delay (ideal)              0.00       0.25
+  output external delay                   -0.10       0.15
+  data required time                                  0.15
+  -----------------------------------------------------------
+  data required time                                  0.15
+  data arrival time                                  -0.24
+  -----------------------------------------------------------
+  slack (VIOLATED)                                   -0.09
+
+
+1

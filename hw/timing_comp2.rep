@@ -1,0 +1,53 @@
+ 
+****************************************
+Report : timing
+        -path full
+        -delay max
+        -max_paths 1
+Design : comp2
+Version: F-2011.09-SP4
+Date   : Fri Dec 28 09:00:55 2012
+****************************************
+
+Operating Conditions: typical   Library: gscl45nm
+Wire Load Model Mode: top
+
+  Startpoint: x[0] (input port clocked by vclk)
+  Endpoint: o (output port clocked by vclk)
+  Path Group: vclk
+  Path Type: max
+
+  Point                                    Incr       Path
+  -----------------------------------------------------------
+  clock vclk (rise edge)                   0.00       0.00
+  clock network delay (ideal)              0.00       0.00
+  input external delay                     0.00       0.00 r
+  x[0] (in)                                0.03       0.03 r
+  U630/Y (INVX4)                           0.03       0.06 f
+  U517/Y (INVX8)                           0.03       0.09 r
+  U497/Y (XOR2X1)                          0.05       0.14 r
+  U582/Y (NAND2X1)                         0.02       0.16 f
+  U580/Y (NAND2X1)                         0.03       0.19 r
+  U579/Y (AOI21X1)                         0.02       0.21 f
+  U529/Y (NAND2X1)                         0.03       0.24 r
+  U528/Y (NOR2X1)                          0.02       0.26 f
+  U555/Y (NAND2X1)                         0.02       0.28 r
+  U554/Y (NAND2X1)                         0.02       0.30 f
+  U551/Y (NAND3X1)                         0.03       0.34 r
+  U681/Y (INVX1)                           0.02       0.36 f
+  U728/Y (NAND2X1)                         0.01       0.36 r
+  o (out)                                  0.00       0.36 r
+  data arrival time                                   0.36
+
+  clock vclk (rise edge)                   0.25       0.25
+  clock network delay (ideal)              0.00       0.25
+  output external delay                   -0.10       0.15
+  data required time                                  0.15
+  -----------------------------------------------------------
+  data required time                                  0.15
+  data arrival time                                  -0.36
+  -----------------------------------------------------------
+  slack (VIOLATED)                                   -0.21
+
+
+1

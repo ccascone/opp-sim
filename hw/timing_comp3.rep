@@ -1,0 +1,57 @@
+ 
+****************************************
+Report : timing
+        -path full
+        -delay max
+        -max_paths 1
+Design : comp3
+Version: F-2011.09-SP4
+Date   : Fri Dec 28 09:04:02 2012
+****************************************
+
+Operating Conditions: typical   Library: gscl45nm
+Wire Load Model Mode: top
+
+  Startpoint: x[0] (input port clocked by vclk)
+  Endpoint: o (output port clocked by vclk)
+  Path Group: vclk
+  Path Type: max
+
+  Point                                    Incr       Path
+  -----------------------------------------------------------
+  clock vclk (rise edge)                   0.00       0.00
+  clock network delay (ideal)              0.00       0.00
+  input external delay                     0.00       0.00 f
+  x[0] (in)                                0.01       0.01 f
+  U1262/Y (INVX2)                          0.03       0.04 r
+  U1263/Y (INVX8)                          0.03       0.06 f
+  U1042/Y (INVX8)                          0.02       0.09 r
+  U1145/Y (INVX8)                          0.03       0.12 f
+  U785/Y (XOR2X1)                          0.03       0.15 f
+  U783/Y (AND2X2)                          0.04       0.18 f
+  U786/Y (NAND2X1)                         0.01       0.19 r
+  U1084/Y (NAND2X1)                        0.02       0.21 f
+  U1083/Y (NOR2X1)                         0.03       0.24 r
+  U1185/Y (INVX1)                          0.02       0.26 f
+  U1076/Y (NOR2X1)                         0.03       0.29 r
+  U1019/Y (AOI21X1)                        0.03       0.32 f
+  U1162/Y (INVX1)                          0.00       0.32 r
+  U1081/Y (NAND2X1)                        0.01       0.33 f
+  U1080/Y (AOI21X1)                        0.02       0.35 r
+  U1258/Y (AND2X2)                         0.03       0.39 r
+  U1257/Y (NAND3X1)                        0.01       0.40 f
+  o (out)                                  0.00       0.40 f
+  data arrival time                                   0.40
+
+  clock vclk (rise edge)                   0.25       0.25
+  clock network delay (ideal)              0.00       0.25
+  output external delay                   -0.10       0.15
+  data required time                                  0.15
+  -----------------------------------------------------------
+  data required time                                  0.15
+  data arrival time                                  -0.40
+  -----------------------------------------------------------
+  slack (VIOLATED)                                   -0.25
+
+
+1
