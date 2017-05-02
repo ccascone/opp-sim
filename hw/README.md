@@ -10,7 +10,8 @@ The flow key is of W bits. The pipeline is made of N stages. The comparator comp
 
 We have synthesized the comparator using Synopsys Design Compiler and the NanGate 45nm Open Cell Library (http://www.nangate.com/?page_id=2325).
 Detailed area and timing reports are provided for W = 4 bits (as per simulation results in the paper) and N=8,16,32 (max N=30 in the paper).
-In all cases the comparator meets timing constraints at 1 GHz. To summarize:
+Design Compiler has been configured with the clock frequency constraint set at 4 GHz, in order to obtain as result the maximum achievable clock frequency at the expense of area.
+In all cases the comparator has a maximum frequency well above 1 GHz, since the maximum delay latency is always less than 1 ns. To summarize:
 
 * N=8: area 340 um^2 (129 logic cells) timing 240 ps
 * N=16: area 1194 um^2 (522 cells) timing 360 ps
