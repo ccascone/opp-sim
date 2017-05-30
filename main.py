@@ -98,6 +98,10 @@ def main():
     param_list = filter(lambda x: x is not None, param_list)
     num_simulators = len(param_list)
 
+    if num_simulators == 0:
+        print "All simulations were already exectued, nothing to do here."
+        return
+
     print "%s were already executed, starting %s simulations..." \
           % (orig_num_simulators - num_simulators, num_simulators)
 
@@ -133,6 +137,7 @@ def main():
     pool.map(worker, worker_params)
 
     print "All done!"
+
 
 if __name__ == '__main__':
     main()

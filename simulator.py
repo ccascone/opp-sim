@@ -10,7 +10,7 @@ import os
 import hashkeys
 import misc
 import scheduler
-from sim_params import caida_chi15_traces
+from sim_params import caida_chi15_traces, imc1_traces
 from simpacket import SimPacket
 
 lock = Lock()
@@ -488,13 +488,14 @@ class Simulator:
 
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
-    caida_trace = caida_chi15_traces[0]
+    #caida_trace = caida_chi15_traces[0]
     fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
     mawi_trace = dict(provider='mawi', name='201003081400')
-    sim = Simulator(caida_trace)
-    sim.provision(N=30, Q=8, W=16,
-                  sched=scheduler.OPPScheduler, hashf=hashkeys.hash_crc16, key=hashkeys.key_ipdst16,
-                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1, quelen=1, thrpt_tolerance=0.95)
+    imc1_trace = imc1_traces[0]
+    sim = Simulator(imc1_trace)
+    sim.provision(N=20, Q=8, W=16,
+                  sched=scheduler.OPPScheduler, hashf=hashkeys.hash_crc16, key=hashkeys.key_5tuple,
+                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1, quelen=100, thrpt_tolerance=0.95)
     # sim = Simulator(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7', N=3, Q=1, W=1,
     #                 sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
     #                 clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)

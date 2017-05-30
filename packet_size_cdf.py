@@ -11,7 +11,8 @@ import time
 
 from misc import get_trace_fname, alpha_pkt_size, hnum
 from result_parser import avg, perc_99th, median
-from sim_params import caida_chi15_traces, caida_sj12_traces, fb_traces, keys_ccr, mawi15_traces
+from sim_params import caida_chi15_traces, caida_sj12_traces, fb_traces, keys_ccr, mawi15_traces, imc1_traces, \
+    imc2_traces
 from simpacket import SimPacket
 
 MAX_PROCESS = cpu_count()
@@ -62,14 +63,17 @@ def parse_trace(args):
             counter.update(pkt_lengths)
             pkt_lengths = deque()
             for key_func in keys_to_count:
-                key_name = key_func.__name__
-                num_key_samples[key_name].append(len(key_sets[key_name]))
+                num_key_samples[key_func.__name__].append(len(key_sets[key_func.__name__]))
             key_sets = {k.__name__: set() for k in keys_to_count}
             rate = PKT_CYCLE / float(time.time() - last_ts)
             last_ts = time.time()
             print "[%spkts/s]" % hnum(rate)
 
+    # Update counters a last time
     counter.update(pkt_lengths)
+
+    for key_func in keys_to_count:
+        num_key_samples[key_func.__name__].append(len(key_sets[key_func.__name__]))
 
     # Stimulate garbage collector
     del dump
@@ -121,9 +125,12 @@ def plot_cdf(name, traces, alpha=1):
         print >> f, "#\n# Evaluated over %s pkts" % int(tot_pkt)
         print >> f, "#\n# key rate per %s pkts:" % PKT_CYCLE
         for key_name in num_key_samples:
-            ss = num_key_samples[key_name]
-            print >> f, "# %s: %s (avg) %s (99th) %s (median) %s (max) %s (num_samples)"\
-                        % (key_name, avg(ss), perc_99th(ss), median(ss), max(ss), len(ss))
+            if len(num_key_samples[key_name]) == 0:
+                print >> f, "# %s: no samples" % key_name
+            else:
+                ss = num_key_samples[key_name]
+                print >> f, "# %s: %s (avg) %s (99th) %s (median) %s (max) %s (num_samples)"\
+                            % (key_name, avg(ss), perc_99th(ss), median(ss), max(ss), len(ss))
         print >> f, "#\n# bytes -> fraction"
         w = len(str(max(x_sorted)))
         for x in x_sorted:
@@ -159,6 +166,8 @@ if __name__ == '__main__':
     # plot_cdf('mawi-10', dict(provider='mawi', name='201003081400'))
     plot_cdf('chi-15', caida_chi15_traces)
     plot_cdf('sj-12', caida_sj12_traces)
-    # plot_cdf('fb', fb_traces)
+    plot_cdf('imc1', imc1_traces)
+    plot_cdf('imc2', imc2_traces)
+    plot_cdf('fb', fb_traces)
     # plot_cdf('test', dict(provider='caida', link='equinix-chicago', day='20150219', time='125911', direction='X'))
-    # make_cumul()
+    make_cumul()

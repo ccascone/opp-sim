@@ -61,6 +61,11 @@ def get_trace_fname(trace):
     elif trace['provider'] == 'mawi':
         fname_a = './mawi/%s.dump.parsed' % trace['name']
         fname_b = None
+
+    elif trace['provider'] == 'imc':
+        fname_a = './imc/%s.parsed' % trace['name']
+        fname_b = None
+
     else:
         raise Exception("Invalid trace provider %s" % trace['provider'])
 
@@ -127,6 +132,14 @@ def caida_list_all_trace_couples(subdir):
             result.append(opt)
 
     return result
+
+
+def imc_list_all_traces(prefix):
+    fnames = glob.glob('./imc/%s_*.parsed' % prefix)
+    names = []
+    for fname in fnames:
+        names.append(fname.split('/')[-1].split('.')[0])
+    return [{'provider': 'imc', 'name': n} for n in names]
 
 
 def caida_trace_fname(trace_opts, extension):

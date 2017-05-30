@@ -1,4 +1,6 @@
              5-tuple      * (global)   ipdst        ipdst/16     ipsrc,ipdst  
 chi-15       2            2            2            2            2            
 sj-12        1            1            1            1            1            
+imc1         1            1            1            1            1            
+imc2         2            1            2            1            2            
 mawi-15      1            1            1            1            1            

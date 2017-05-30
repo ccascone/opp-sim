@@ -80,6 +80,10 @@ def max1(value):
     return min(value, 1)
 
 
+def inv(value):
+    return 1 - value
+
+
 scales = {'sched_latency_': 'log10L', 'sched_queue_': 'log10L', 'sched_drop_fract': 'log10L'}
 
 
@@ -136,7 +140,7 @@ group_template = dict(
     },
     filter_funcs={'sched_latency_99th': thrpt_100,
                   'sched_queue_max_99th': thrpt_100,
-                  'sched_queue_sum_99th':thrpt_100},
+                  'sched_queue_sum_99th': thrpt_100},
     x_param='N',
     z_param=('Q', 'W'),
     line_param='key',
@@ -145,6 +149,7 @@ group_template = dict(
 
 group_template_dim = dict(
     y_sample={
+        'sched_thrpt': min,
         'sched_drop_fract': perc_99th,
         'sched_latency_99th': max,
         'sched_queue_max_99th': max,
@@ -154,7 +159,7 @@ group_template_dim = dict(
     z_param=('quelen', 'Q', 'W'),
     line_param='key',
     subdir_param=('quelen'),
-    style='linespoints',
+    # style='linespoints',
     meta_samples={'cycle_util': [avg]},
     **p_filter)
 
@@ -168,6 +173,12 @@ result_confs = [
     dict(sim_group='mawi15-haz-1F', **group_template_hazard),
     dict(sim_group='mawi15-haz-MF', **group_template_hazard),
 
+    dict(sim_group='imc1-haz-1F', **group_template_hazard),
+    dict(sim_group='imc1-haz-MF', **group_template_hazard),
+
+    dict(sim_group='imc2-haz-1F', **group_template_hazard),
+    dict(sim_group='imc2-haz-MF', **group_template_hazard),
+
     dict(sim_group='fb-haz-1F', **group_template_hazard),
 
     dict(sim_group='caida-chi15-opp', **group_template),
@@ -178,6 +189,12 @@ result_confs = [
 
     dict(sim_group='mawi15-opp', **group_template),
     dict(sim_group='mawi15-opp-dim', trace_name='mawi-15', **group_template_dim),
+
+    dict(sim_group='imc1-opp', **group_template),
+    dict(sim_group='imc1-opp-dim', trace_name='imc1', **group_template_dim),
+
+    dict(sim_group='imc2-opp', **group_template),
+    dict(sim_group='imc2-opp-dim', trace_name='imc2', **group_template_dim),
 
     dict(sim_group='fb-opp', **group_template),
     dict(sim_group='fb-opp-dim', trace_name='fb-web', **group_template_dim),
@@ -589,7 +606,7 @@ def main(prefix):
             parse_result_to_file(conf)
             if conf['sim_group'].endswith('-dim'):
                 drop_confs.append(conf)
-    for drop_tolerance in [0, 0.01, 0.001, 0.0001, 0.00001]:
+    for drop_tolerance in [0, 0.05, 0.03, 0.01, 0.001, 0.0001, 0.00001]:
         parse_max_budget(drop_confs, drop_tolerance=drop_tolerance)
 
 

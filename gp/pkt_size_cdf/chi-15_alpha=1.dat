@@ -67,10 +67,11 @@
 # Evaluated over 3530297844 pkts
 #
 # key rate per 1000000 pkts:
-# key_const: 1.0 (avg) 1.0 (99th) 1.0 (median) 1 (max) 3498 (num_samples)
-# key_ipdst: 57687.2638651 (avg) 63039.24 (99th) 57846.5 (median) 66799 (max) 3498 (num_samples)
-# key_ipdst16: 4566.82018296 (avg) 4788.0 (99th) 4673.0 (median) 4827 (max) 3498 (num_samples)
-# key_5tuple: 100661.79817 (avg) 114543.16 (99th) 99726.0 (median) 155106 (max) 3498 (num_samples)
+# key_const: 1.0 (avg) 1.0 (99th) 1.0 (median) 1 (max) 3562 (num_samples)
+# key_ipdst: 57311.4898933 (avg) 62999.96 (99th) 57765.5 (median) 66799 (max) 3562 (num_samples)
+# key_ipsrc_ipdst: 89425.8158338 (avg) 97128.56 (99th) 89652.5 (median) 145168 (max) 3562 (num_samples)
+# key_ipdst16: 4552.14654688 (avg) 4788.0 (99th) 4670.0 (median) 4827 (max) 3562 (num_samples)
+# key_5tuple: 99961.99242 (avg) 114569.08 (99th) 99678.0 (median) 155106 (max) 3562 (num_samples)
 #
 # bytes -> fraction
 28   2.95867387443e-06

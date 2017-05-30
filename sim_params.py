@@ -1,7 +1,7 @@
 # clock_freq, N, Q, sched, hash, key, read_chunk, line_rate_util
 from copy import copy
 
-from misc import caida_list_all_trace_couples as caida_list_all_trace_couples
+from misc import caida_list_all_trace_couples as caida_list_all_trace_couples, imc_list_all_traces
 from hashkeys import *
 from scheduler import OPPScheduler, HazardDetector
 
@@ -12,6 +12,8 @@ caida_chi15_traces = caida_list_all_trace_couples('chicago-20150219')
 caida_sj12_traces = caida_list_all_trace_couples('sanjose-20121115')
 # mawi15_traces = [dict(provider='mawi', name='201507201400')]
 mawi15_traces = [dict(provider='mawi', name='201507201400-0%s' % str(i)) for i in [1, 2, 3]]
+imc1_traces = imc_list_all_traces('univ1')
+imc2_traces = imc_list_all_traces('univ2')
 
 # 10 most active racks from facebook
 fb_traces = [dict(provider='fb', cluster='B', rack=r) for r in ['bace22a7', '791f21d2', '59b83d96', '079a31f6',
@@ -36,15 +38,15 @@ hazard_template_per_flow = dict(
 
 thrpt_template = dict(
     sched=OPPScheduler, key=keys_ccr, N=range(1, 31), Q=[1, 4, 8, 16], W=[16], hashf=hash_crc16, read_chunk=80,
-    clock_freq=0, thrpt_tolerance=0.8)
+    clock_freq=0)#, thrpt_tolerance=0.8)
 
 thrpt_template_1F = dict(
-    sched=OPPScheduler, key=key_const, N=range(1, 11), Q=1, W=1, hashf=hash_crc16, read_chunk=80, clock_freq=0,
-    thrpt_tolerance=0.8)
+    sched=OPPScheduler, key=key_const, N=range(1, 11), Q=1, W=1, hashf=hash_crc16, read_chunk=80, clock_freq=0)
+    #,thrpt_tolerance=0.8)
 
 dim_template = dict(
     sched=OPPScheduler, key=keys_ccr, N=range(1, 31), Q=[1, 4, 8, 16], W=[16], quelen=[10, 100],
-    hashf=hash_crc16, read_chunk=80, clock_freq=0, drop_tolerance=0.02)
+    hashf=hash_crc16, read_chunk=80, clock_freq=0)#, drop_tolerance=0.02)
 
 dim_template_1F = dict(
     quelen=[10, 100], **thrpt_template_1F)
@@ -61,6 +63,12 @@ sim_groups = {
     "mawi15-haz-1F": dict(trace=mawi15_traces, **hazard_template),
     "mawi15-haz-MF": dict(trace=mawi15_traces, **hazard_template_per_flow),
 
+    "imc1-haz-1F": dict(trace=imc1_traces, **hazard_template),
+    "imc1-haz-MF": dict(trace=imc1_traces, **hazard_template_per_flow),
+
+    "imc2-haz-1F": dict(trace=imc2_traces, **hazard_template),
+    "imc2-haz-MF": dict(trace=imc2_traces, **hazard_template_per_flow),
+
     "fb-haz-1F": dict(trace=fb_traces, **hazard_template),
 
     # OPP
@@ -75,7 +83,13 @@ sim_groups = {
     "fb-opp-dim": dict(trace=fb_traces, **dim_template_1F),
 
     "mawi15-opp": dict(trace=mawi15_traces, **thrpt_template),
-    "mawi15-opp-dim": dict(trace=mawi15_traces, **dim_template)
+    "mawi15-opp-dim": dict(trace=mawi15_traces, **dim_template),
+
+    "imc1-opp": dict(trace=imc1_traces, **thrpt_template),
+    "imc1-opp-dim": dict(trace=imc1_traces, **dim_template),
+
+    "imc2-opp": dict(trace=imc2_traces, **thrpt_template),
+    "imc2-opp-dim": dict(trace=imc2_traces, **dim_template)
 }
 
 noexp = ['trace']
