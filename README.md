@@ -16,3 +16,4 @@ To unserstand folder naming, consider the following:
 * "opp" represents the case of a pipeline that implements memory locking as described in the paper, with infinite queues
 * "opp-dim" represents the previous case but when using fixed-size queues
 * "max_N_per_drop" contains time budget results, i.s. the maximum number of cycles (and corresponding queueing latency) to support a given target throughput. Results are organized per levels of packet drop tolerance, for example results under drop_0.01 presents the maximum number of cycles to sustain a minimum throughput of 99%.
+* Differently from the paper, where W represents the number of bits used by the comparator, here W represents the maximum number of distinct flows, i.e. W_repo = 2^W_paper, e.g. W_repo = 16 corresponds to W_paper = 4.
