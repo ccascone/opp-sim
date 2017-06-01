@@ -1,0 +1,62 @@
+ 
+****************************************
+Report : timing
+        -path full
+        -delay max
+        -max_paths 1
+Design : comp3
+Version: F-2011.09-SP4
+Date   : Thu Nov 22 10:48:08 2012
+****************************************
+
+Operating Conditions: typical   Library: gscl45nm
+Wire Load Model Mode: top
+
+  Startpoint: x[0] (input port clocked by vclk)
+  Endpoint: o (output port clocked by vclk)
+  Path Group: vclk
+  Path Type: max
+
+  Point                                    Incr       Path
+  -----------------------------------------------------------
+  clock vclk (rise edge)                   0.00       0.00
+  clock network delay (ideal)              0.00       0.00
+  input external delay                     0.10       0.10 r
+  x[0] (in)                                0.01       0.11 r
+  U661/Y (INVX1)                           0.05       0.16 f
+  U773/Y (BUFX2)                           0.09       0.25 f
+  U1140/Y (MUX2X1)                         0.07       0.31 r
+  U984/Y (OR2X1)                           0.05       0.36 r
+  U983/Y (INVX1)                           0.04       0.40 f
+  U1302/Y (AOI22X1)                        0.04       0.44 r
+  U693/Y (BUFX2)                           0.04       0.48 r
+  U657/Y (AND2X1)                          0.03       0.51 r
+  U836/Y (INVX1)                           0.02       0.53 f
+  U1305/Y (NOR3X1)                         0.04       0.57 r
+  U1306/Y (NAND3X1)                        0.02       0.59 f
+  U802/Y (BUFX2)                           0.03       0.62 f
+  U1307/Y (AOI21X1)                        0.01       0.64 r
+  U791/Y (BUFX2)                           0.03       0.67 r
+  U812/Y (AND2X2)                          0.03       0.70 r
+  U813/Y (INVX1)                           0.02       0.72 f
+  U1308/Y (AOI22X1)                        0.03       0.75 r
+  U811/Y (BUFX2)                           0.04       0.79 r
+  U1309/Y (AOI22X1)                        0.02       0.80 f
+  U805/Y (BUFX2)                           0.04       0.84 f
+  U1321/Y (OAI21X1)                        0.04       0.88 r
+  U781/Y (NAND2X1)                         0.02       0.90 f
+  o (out)                                  0.00       0.90 f
+  data arrival time                                   0.90
+
+  clock vclk (rise edge)                   1.00       1.00
+  clock network delay (ideal)              0.00       1.00
+  output external delay                   -0.10       0.90
+  data required time                                  0.90
+  -----------------------------------------------------------
+  data required time                                  0.90
+  data arrival time                                  -0.90
+  -----------------------------------------------------------
+  slack (MET)                                         0.00
+
+
+1

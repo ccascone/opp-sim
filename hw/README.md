@@ -10,12 +10,12 @@ The flow key is of W bits. The pipeline is made of N stages. The comparator comp
 
 We have synthesized the comparator using Synopsys Design Compiler and a fairly old 45 nm library (NanGate 45nm Open Cell Library http://www.nangate.com/?page_id=2325).
 Detailed area and timing reports are provided for W = 4 bits (as per simulation results in the paper) and N=8,16,32 (max N=30 in the paper).
-Design Compiler has been configured with the clock frequency constraint set at 4 GHz, in order to obtain as result the maximum achievable clock frequency at the expense of area.
-In all the cases our design shows a maximum delay latency well below the 1 ns required to work at 1 GHz, meeting the timing constraints. To summarize:
+We provide results when setting the clock frequency constraint to 1 GHz, to minimize area at the expense of critical-path delay (reports under 1ghz directory), and vice versa, by setting the clock frequency constraint to 4 GHz (reports under 4ghz), in order to get the minimum critical-path delay at the expense of area.
 
-* N=8: area 340 um^2 (129 logic cells) timing 240 ps
-* N=16: area 1194 um^2 (522 cells) timing 360 ps
-* N=32: area 1988 um^2 (846 cells) timing 400 ps
+| N  | Area at 1 Ghz        | Min. delay |
+|----|----------------------|------------|
+| 8  | 196 um2 (71 cells)   | 240 ps     |
+| 16 | 929 um2 (403 cells)  | 360 ps     |
+| 32 | 1560 um2 (668 cells) | 400 ps     |
 
-Clearly, the proposed solution has a dependency on N, for which it might be hard to meet timing constraints for larger values of N.
-The use of a comparator is one of many possible solutions to implement the locking scheme proposed in the paper, alternative solutions can help solving timing constraints for larger values of N.
+The proposed solution has a dependency on N, for which it might be hard to meet timing constraints for larger values of N. The use of a comparator is one of many possible solutions to implement the locking scheme proposed in the paper, alternative solutions can help solving timing constraints for larger values of N.

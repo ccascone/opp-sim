@@ -1,0 +1,50 @@
+ 
+****************************************
+Report : timing
+        -path full
+        -delay max
+        -max_paths 1
+Design : comp1
+Version: F-2011.09-SP4
+Date   : Thu Nov 22 10:49:18 2012
+****************************************
+
+Operating Conditions: typical   Library: gscl45nm
+Wire Load Model Mode: top
+
+  Startpoint: x[2] (input port clocked by vclk)
+  Endpoint: o (output port clocked by vclk)
+  Path Group: vclk
+  Path Type: max
+
+  Point                                    Incr       Path
+  -----------------------------------------------------------
+  clock vclk (rise edge)                   0.00       0.00
+  clock network delay (ideal)              0.00       0.00
+  input external delay                     0.10       0.10 r
+  x[2] (in)                                0.08       0.18 r
+  U144/Y (INVX1)                           0.08       0.25 f
+  U170/Y (MUX2X1)                          0.06       0.32 r
+  U173/Y (NOR3X1)                          0.05       0.37 f
+  U180/Y (AOI22X1)                         0.05       0.42 r
+  U124/Y (BUFX2)                           0.03       0.45 r
+  U135/Y (INVX1)                           0.02       0.47 f
+  U126/Y (OR2X1)                           0.05       0.52 f
+  U125/Y (OR2X1)                           0.05       0.57 f
+  U186/Y (NOR3X1)                          0.03       0.60 r
+  U193/Y (AOI22X1)                         0.04       0.63 f
+  o (out)                                  0.00       0.63 f
+  data arrival time                                   0.63
+
+  clock vclk (rise edge)                   1.00       1.00
+  clock network delay (ideal)              0.00       1.00
+  output external delay                   -0.10       0.90
+  data required time                                  0.90
+  -----------------------------------------------------------
+  data required time                                  0.90
+  data arrival time                                  -0.63
+  -----------------------------------------------------------
+  slack (MET)                                         0.27
+
+
+1
