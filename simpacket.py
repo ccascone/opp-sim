@@ -4,6 +4,7 @@ from struct import unpack_from, pack
 class SimPacket():
     def __init__(self, packed_buffer, offset=0):
         self.direct, self.ts_nano, self.iplen = unpack_from('cdH', packed_buffer, offset=offset)
+        assert self.direct in ('A', 'B', 'X') # check we are unpacking right
         self.packed_buffer = packed_buffer
         self.offset = offset
         self.lookup_key = None

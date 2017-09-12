@@ -1,71 +1,99 @@
-import pickle
 import time
-from collections import OrderedDict
 from math import ceil
 from multiprocessing import Lock
 from sys import stderr
+from misc import hnum
 
 import os
+import pickle
+from collections import OrderedDict
 
 import hashkeys
 import misc
 import scheduler
-from sim_params import caida_chi15_traces, imc1_traces
+from sim_params import imc1_traces
 from simpacket import SimPacket
 
 lock = Lock()
 
-MAX_PKT_REPORT_COUNT = 100000
-REPORT_STEP = MAX_PKT_REPORT_COUNT * 100
+# REPORT_STEP = MAX_PKT_REPORT_COUNT * 100
+DEFAULT_REPORT_SECONDS = 1
 
 
 class SimException(Exception):
     pass
 
 
+# noinspection PyPep8Naming
+def evaluate_bitrate(dump, start_idx, sample_seconds=1, tot_samples=10):
+    last_report_ts = 0
+    byte_count = 0
+    samples = []
+    i = start_idx
+    while True:
+        pkt = SimPacket(dump, i)
+        if last_report_ts == 0:
+            last_report_ts = pkt.ts_nano
+        byte_count += pkt.iplen
+        if pkt.ts_nano - last_report_ts > sample_seconds:
+            delta_time = pkt.ts_nano - last_report_ts
+            bitrate = (byte_count * 8) / float(delta_time)
+            samples.append(bitrate)
+            last_report_ts = pkt.ts_nano
+            byte_count = 0
+        i += 32
+        if i == len(dump):
+            return -1, 0
+        if len(samples) == tot_samples:
+            break
+    if len(samples) == 0:
+        return -1, 0
+    return max(samples), i
+
+
 class Simulator:
     def __init__(self, trace):
         self.trace = trace
-        self.dumps = None
-
+        self.dump = None
         self.sim_params = None
         self.label = None
         self.sim_group = None
         self.results_fname = None
-        self.clock_freq = None  # Ghz
         self.N = None
         self.Q = None
         self.W = None
         self.hash_func = None
         self.key_func = None
         self.scheduler = None
-        self.read_chunk = None
+        self.dp_bytes = None
         self.sim_util = None
-        self.report_interval = 1
-        self.tick_duration = None
         self.running = None
         self.samples = None
         self.threaded = None
         self.debug = None
-        self.line_rate = None
-        self.time_stretch_factor = None
         self.max_samples = None
-        self.mlen = None
         self.drop_tolerance = None
         self.thrpt_tolerance = None
+        self.quelen = None
+        self.report_seconds = None
 
     def provision(self, N, Q, sched, hashf, key, W=None,
-                  clock_freq=0, read_chunk=0, line_rate_util=0.0, mlen=1, sim_group='all', sim_name=None,
-                  max_samples=5, quelen=0, drop_tolerance=1.0, thrpt_tolerance=0.0):
+                  read_chunk=0, line_rate_util=0.0, sim_group='all',
+                  sim_name=None, report_seconds=DEFAULT_REPORT_SECONDS,
+                  max_samples=0, quelen=0, drop_tolerance=1.0, thrpt_tolerance=0.0):
         """
         Creates a new simulator instance.
-        :param trace['day: Day of the traffic trace to use.
-        :param trace_ts: Timestamp of the traffic trace to use.
+        :param report_seconds:
+        :param thrpt_tolerance:
+        :param drop_tolerance:
+        :param quelen:
+        :param read_chunk:
+        :param W:
+        :param sched:
         :param N: Number of clock cycles needed for the OPP stage to atomically process a packet.
         :param Q: Number of flow queues.
         :param hashf: A function to compute the digests of the lookup and update keys.
         :param key: A function to extract the lookup and update keys from the packet.
-        :param clock_freq: A clock frequency (Hz), 0 to simulate the case where packets arrives at each clock cycle.
         :param read_chunk: Number of bytes that can be read from an input port at each clock cycle.
                             0 to read the whole packet in 1 tick.
         :param line_rate_util:
@@ -77,13 +105,12 @@ class Simulator:
         if W is None:
             W = Q
 
-        # type: (basestring, int, int, int, function, function, int, int, int) -> None
         trace_label = misc.get_trace_label(self.trace)
 
         self.sim_params = OrderedDict(trace=trace_label,
                                       sched=sched.__name__, N=N, Q=Q, W=W,
                                       key=key.__name__, hash=hashf.__name__,
-                                      mlen=mlen, clock=clock_freq, read_chunk=read_chunk, util=line_rate_util)
+                                      read_chunk=read_chunk, util=line_rate_util)
 
         # To avoid redoing old sims
         if quelen > 0:
@@ -106,33 +133,26 @@ class Simulator:
         if not os.path.exists("results/%s" % self.sim_group):
             os.makedirs("results/%s" % self.sim_group)
 
-        self.clock_freq = clock_freq  # Ghz
         self.N = N
         self.Q = Q
         self.W = W
         self.hash_func = hashf
         self.key_func = key
         self.quelen = quelen
-        self.scheduler = sched(N=self.N, Q=self.Q, W=self.W, hash_func=self.hash_func, quelen=self.quelen)
-        self.read_chunk = float(read_chunk)
-        assert 0 <= line_rate_util <= 1
+        self.scheduler = sched(N=self.N, Q=self.Q, W=self.W, hash_func=self.hash_func,
+                               quelen=self.quelen)
+        self.dp_bytes = float(read_chunk)
+        assert 0.0 < line_rate_util <= 1.0
         self.sim_util = float(line_rate_util)
-        self.report_interval = 1
-        if clock_freq > 0:
-            self.tick_duration = 1 / float(clock_freq)
         self.running = True
         self.samples = dict()
         self.threaded = False
+        self.threaded = False
         self.debug = False
-        if read_chunk > 0 and clock_freq > 0:
-            self.line_rate = clock_freq * read_chunk * 8
-        else:
-            self.line_rate = 0
-        self.time_stretch_factor = 0
         self.max_samples = max_samples
-        self.mlen = mlen
         self.drop_tolerance = drop_tolerance
         self.thrpt_tolerance = thrpt_tolerance
+        self.report_seconds = report_seconds
 
     def need_to_run(self):
         if self.debug:
@@ -169,8 +189,7 @@ class Simulator:
                 # Save results under ./results/sim_group
                 result = dict(params=dict(self.sim_params),
                               samples=self.samples,
-                              digest_stats=self.scheduler.digest_stats(),
-                              line_rate=self.line_rate)
+                              digest_stats=self.scheduler.digest_stats())
                 with open(self.results_fname, 'wb') as f:
                     pickle.dump(result, f)
         except SimException as e:
@@ -186,7 +205,7 @@ class Simulator:
         lock.acquire()
         lock_fname = self.results_fname + '.lock'
         if os.path.isfile(lock_fname):
-            self._print("*** ERROR: simulation aborted, another simulator is running for this configuration")
+            self._print("*** ERROR: aborting, another simulator is running for this configuration")
             return
         with open(lock_fname, 'w') as f:
             f.write("locked")
@@ -201,49 +220,41 @@ class Simulator:
 
     def do_simulation(self):
 
-        fname_a, fname_b = misc.get_trace_fname(self.trace)
+        fname, fname_b = misc.get_trace_fname(self.trace)
 
-        if self.dumps is None:
-            self.dumps = {fname_a: '', fname_b: ''}
-            for fname in [fname_a, fname_b]:
-                if fname:
-                    if not os.path.isfile(fname):
-                        raise SimException("Not such trace file: %s" % fname_a)
-                    else:
-                        try:
-                            with open(fname, 'rb') as f:
-                                self._print('Reading %s...' % fname, False)
-                                self.dumps[fname] = f.read()
-                        except IOError:
-                            raise SimException("Unable to read trace file %s" % fname)
+        if fname_b is not None:
+            raise SimException('Do not support anymore double direction traces')
 
-        tot_pkt_a, rem_a = divmod(len(self.dumps[fname_a]), 32.0)
-        tot_pkt_b, rem_b = divmod(len(self.dumps[fname_b]), 32.0)
+        if self.dump is None:
+            if not os.path.isfile(fname):
+                raise SimException("Not such trace file: %s" % fname)
+            else:
+                try:
+                    with open(fname, 'rb') as f:
+                        self._print('Reading %s...' % fname, False)
+                        self.dump = f.read()
+                except IOError:
+                    raise SimException("Unable to read trace file %s" % fname)
 
-        if (rem_a + rem_b) != 0:
-            raise SimException("Invalid byte count in file A or B (file size must be multiple of 32 bytes)")
+        tot_pkt, rem = divmod(len(self.dump), 32.0)
 
-        if self.line_rate > 0 and self.sim_util != 0:
-            self._print('Simulated line rate is %sbps' % misc.hnum(self.line_rate), False)
-            self._print('Evaluating traces bitrate...', False)
-            bitrate_a = misc.evaluate_bitrate(self.dumps[fname_a])
-            bitrate_b = misc.evaluate_bitrate(self.dumps[fname_b]) if len(self.dumps[fname_b]) else {'max': 0}
-            max_bitrate = bitrate_a['max'] + bitrate_b['max']
-            self.time_stretch_factor = max_bitrate / (self.line_rate * self.sim_util)
-            self._print('Trace max bitrate is %sbps, setting time stretch factor to %f...'
-                        % (misc.hnum(max_bitrate), self.time_stretch_factor), False)
-            self.report_interval *= self.time_stretch_factor
+        if rem != 0:
+            raise SimException(
+                "Invalid byte count in file (file size must be multiple of 32 bytes)")
 
-        tot_pkts = int(tot_pkt_a + tot_pkt_b)
+        tot_pkt = int(tot_pkt)
 
-        if tot_pkts < MAX_PKT_REPORT_COUNT:
-            raise SimException('Not enough packets in this trace (found %s, required %s)'
-                               % (tot_pkts, MAX_PKT_REPORT_COUNT))
+        self._print("Starting simulation, will print report every %s seconds (total pkts %s)..."
+                    % (self.report_seconds, misc.hnum(tot_pkt)))
 
-        idx_a = 0  # index of next packet to be read from trace A
-        idx_b = 0  # ... from trace B
-        pkt_a = None
-        pkt_b = None
+        idx = 0  # start index of the next packet to be read from the trace
+        clock_freq, report_tot_pkts = self.update_clock_freq(idx, self.report_seconds,
+                                                             self.sim_util)
+        if clock_freq < 0:
+            raise SimException(
+                "Not enough packets to cover one report of %s seocnds" % self.report_seconds)
+
+        tick_duration = 1 / float(clock_freq)
 
         start_ts = time.time()  # now
         start_pkt_ts = 0  # timestamp of the first packet processed
@@ -263,56 +274,36 @@ class Simulator:
         report_queueing_delay = 0  # cumulative ingress queuing delay
         report_last_cycle = 0  # last cycle number of the last report
 
-        self._print("Starting simulation, will print report every %s pkts (total %s)..."
-                    % (misc.hnum(MAX_PKT_REPORT_COUNT), misc.hnum(tot_pkts)))
-
         while self.running:
 
             # Extract packet from direction A
-            if not pkt_a and idx_a < tot_pkt_a:
-                pkt_a = SimPacket(self.dumps[fname_a], idx_a * 32)
-                idx_a += 1
-            # Extract packet from direction B
-            if not pkt_b and idx_b < tot_pkt_b:
-                pkt_b = SimPacket(self.dumps[fname_b], idx_b * 32)
-                idx_b += 1
-            # Choose between A and B.
-            if pkt_a and (not pkt_b or pkt_a.ts_nano <= pkt_b.ts_nano):
-                pkt = pkt_a
-                pkt_a = None
-            elif pkt_b and (not pkt_a or pkt_b.ts_nano <= pkt_a.ts_nano):
-                pkt = pkt_b
-                pkt_b = None
+            if idx < tot_pkt:
+                pkt = SimPacket(self.dump, idx * 32)
+                idx += 1
             else:
                 # No more packets to process.
                 return
-
-            # Scale time if required.
-            if self.time_stretch_factor != 0:
-                pkt.ts_nano *= self.time_stretch_factor
 
             extra_cycles_to_do = 0
 
             if start_pkt_ts == 0:
                 start_pkt_ts = pkt.ts_nano
                 report_trfc_last_ts = pkt.ts_nano
-            elif self.clock_freq > 0:
+            elif clock_freq > 0:
                 # We are simulating a clock frequency.
                 pkt_relative_time = pkt.ts_nano - start_pkt_ts
-                sim_time = cycle * self.tick_duration
+                sim_time = cycle * tick_duration
                 if pkt_relative_time > sim_time:
                     # Fast forward time till it's time to process this packet.
-                    extra_cycles_to_do += int(ceil((pkt_relative_time - sim_time) / self.tick_duration))
+                    extra_cycles_to_do += int(
+                        ceil((pkt_relative_time - sim_time) / tick_duration))
                 else:
                     # Report any queuing delay at ingress ports.
                     report_queueing_delay += sim_time - pkt_relative_time
 
-            # Packet size multiplier
-            # pkt.iplen = transform_pkt_size(pkt.iplen, self.mlen)
-
-            if 0 < self.read_chunk < pkt.iplen:
+            if 0 < self.dp_bytes < pkt.iplen:
                 # Need more than 1 clock cycle to read the packet
-                extra_cycles_to_do += int(ceil(pkt.iplen / self.read_chunk)) - 1
+                extra_cycles_to_do += int(ceil(pkt.iplen / self.dp_bytes)) - 1
                 report_read_cycle_count += extra_cycles_to_do
 
             if extra_cycles_to_do:
@@ -340,21 +331,22 @@ class Simulator:
             report_read_cycle_count += 1
             report_trfc_byte_count += pkt.iplen
 
-            if report_pkt_count >= MAX_PKT_REPORT_COUNT:
+            if report_pkt_count == report_tot_pkts:
                 # if (pkt.ts_nano - report_trfc_last_ts) >= self.report_interval:
                 # Report values every 1 second of traffic.
                 report_delta_time = time.time() - report_ts
                 report_cycle_count = cycle - report_last_cycle
                 sim_pkt_rate = report_pkt_count / float(report_delta_time)
                 sim_cycle_rate = report_cycle_count / float(report_delta_time)
-                sim_eta = (tot_pkts - pkt_count) / sim_pkt_rate  # seconds
+                sim_eta = (tot_pkt - pkt_count) / sim_pkt_rate  # seconds
                 sim_avg_queue_delay = report_queueing_delay / float(report_pkt_count)
 
                 trfc_delta_time = pkt.ts_nano - report_trfc_last_ts
                 trfc_bitrate = (report_trfc_byte_count * 8) / trfc_delta_time
                 trfc_pkt_rate = report_pkt_count / trfc_delta_time
 
-                work_cycles = report_sched_cycles[scheduler.WORK] + report_sched_cycles[scheduler.HAZARD]
+                work_cycles = report_sched_cycles[scheduler.WORK] + report_sched_cycles[
+                    scheduler.HAZARD]
 
                 work_cycles_count += work_cycles
                 pkt_count += report_pkt_count
@@ -397,6 +389,7 @@ class Simulator:
                     sched_latency_95th=misc.percentile(latencies, 0.95),
                     sched_latency_99th=misc.percentile(latencies, 0.99),
                     sched_keys_count=self.scheduler.key_count(),
+                    report_pkt_count=report_pkt_count,
                     trfc_bitrate=trfc_bitrate,
                     trfc_pkt_rate=trfc_pkt_rate,
                     cycle_util=util,
@@ -416,8 +409,9 @@ class Simulator:
 
                 if self.drop_tolerance < 1 and drop_fract > self.drop_tolerance:
                     # No need to collect other samples.
-                    self._print("Interrupted because drop_fract=%s is below tolerance level of %s..."
-                                % (misc.hnum(drop_fract), misc.hnum(self.drop_tolerance)))
+                    self._print(
+                        "Interrupted because drop_fract=%s is below tolerance level of %s..."
+                        % (misc.hnum(drop_fract), misc.hnum(self.drop_tolerance)))
                     return
 
                 if self.thrpt_tolerance > 0 and thrpt < self.thrpt_tolerance:
@@ -425,19 +419,6 @@ class Simulator:
                     self._print("Interrupted because thrpt=%s is below tolerance level of %s..."
                                 % (misc.hnum(thrpt), misc.hnum(self.thrpt_tolerance)))
                     return
-
-                # Skip REPORT_STEP packets
-                if REPORT_STEP > 0:
-                    relative_step = REPORT_STEP / tot_pkts
-
-                    idx_a += int(tot_pkt_a * relative_step)
-                    idx_b += int(tot_pkt_b * relative_step)
-                    if fname_a and (idx_a + MAX_PKT_REPORT_COUNT) >= tot_pkt_a \
-                            or fname_b and (idx_b + MAX_PKT_REPORT_COUNT) >= tot_pkt_b:
-                        # Not enough pkts
-                        return
-                    start_pkt_ts = 0
-                    cycle = 0
 
                 # Reset report variables.
                 report_pkt_count = 0
@@ -449,6 +430,14 @@ class Simulator:
                 report_queueing_delay = 0
                 report_last_cycle = cycle
                 report_ts = time.time()
+
+                clock_freq, report_tot_pkts = self.update_clock_freq(idx * 32,
+                                                                     self.report_seconds,
+                                                                     self.sim_util)
+
+                if clock_freq < 0:
+                    self._print("Not enough packets in the next report. Stopping here.")
+                    return
 
                 # Encourage garbage collection
                 del latencies
@@ -485,17 +474,32 @@ class Simulator:
                 self.samples[k] = list()
             self.samples[k].append(values[k])
 
+    def update_clock_freq(self, idx, report_seconds, sim_util):
+        max_bitrate, next_idx = evaluate_bitrate(dump=self.dump, start_idx=idx, sample_seconds=1,
+                                                 tot_samples=report_seconds)
+        if max_bitrate < 0:
+            return -1, 0
+
+        num_pkts = (next_idx - idx) / 32
+        remaining  = (len(self.dump) - next_idx) / 32
+        line_rate = max_bitrate / float(sim_util)
+        clock_freq = int(ceil(line_rate / float(self.dp_bytes * 8)))
+        self._print(("** max_bitrate=%sbps, line_rare=%sbps, sim_util=%s, clock_freq=%sHz, " +
+                    "num_pkts=%s, remaining=%s")
+                    % (hnum(max_bitrate), hnum(line_rate), self.sim_util, hnum(clock_freq),
+                       hnum(num_pkts), hnum(remaining)))
+        return clock_freq, num_pkts
+
 
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
-    #caida_trace = caida_chi15_traces[0]
+    # caida_trace = caida_chi15_traces[0]
     fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
     mawi_trace = dict(provider='mawi', name='201003081400')
-    imc1_trace = imc1_traces[0]
-    sim = Simulator(imc1_trace)
-    sim.provision(N=20, Q=8, W=16,
-                  sched=scheduler.OPPScheduler, hashf=hashkeys.hash_crc16, key=hashkeys.key_5tuple,
-                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1, quelen=100, thrpt_tolerance=0.95)
+    sim = Simulator(imc1_traces[1])
+    sim.provision(N=4, Q=1, W=16,
+                  sched=scheduler.OPPScheduler, hashf=hashkeys.hash_crc16, key=hashkeys.key_const,
+                  read_chunk=64, quelen=10, line_rate_util=0.99, thrpt_tolerance=0)
     # sim = Simulator(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7', N=3, Q=1, W=1,
     #                 sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
     #                 clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
