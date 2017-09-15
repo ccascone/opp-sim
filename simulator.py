@@ -484,10 +484,11 @@ class Simulator:
         remaining  = (len(self.dump) - next_idx) / 32
         line_rate = max_bitrate / float(sim_util)
         clock_freq = int(ceil(line_rate / float(self.dp_bytes * 8)))
-        self._print(("** max_bitrate=%sbps, line_rare=%sbps, sim_util=%s, clock_freq=%sHz, " +
-                    "num_pkts=%s, remaining=%s")
-                    % (hnum(max_bitrate), hnum(line_rate), self.sim_util, hnum(clock_freq),
-                       hnum(num_pkts), hnum(remaining)))
+        if not self.threaded:
+            self._print(("** max_bitrate=%sbps, line_rare=%sbps, sim_util=%s, clock_freq=%sHz, " +
+                        "num_pkts=%s, remaining=%s")
+                        % (hnum(max_bitrate), hnum(line_rate), self.sim_util, hnum(clock_freq),
+                           hnum(num_pkts), hnum(remaining)))
         return clock_freq, num_pkts
 
 
