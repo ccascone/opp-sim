@@ -1,4 +1,5 @@
 pypyenv
+venv
 .idea
 *.pyc
 results/*
