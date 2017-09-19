@@ -5,3 +5,5 @@ results/*
 simulator.log
 parse_report.txt
 plot_data
+imc/univ1_*
+imc/univ2_*
