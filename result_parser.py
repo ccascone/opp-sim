@@ -156,48 +156,31 @@ group_template_dim = dict(
         'sched_queue_sum_99th': max,
     },
     x_param='N',
-    z_param=('quelen', 'Q', 'W'),
+    z_param=('quelen', 'Q', 'W', 'util'),
     line_param='key',
-    subdir_param=('quelen'),
+    subdir_param=('util'),
     # style='linespoints',
     meta_samples={'cycle_util': [avg]},
     **p_filter)
 
 result_confs = [
-    dict(sim_group='caida-chi15-haz-1F', **group_template_hazard),
-    dict(sim_group='caida-chi15-haz-MF', **group_template_hazard),
+    # dict(sim_group='caida-chi15-opp', **group_template),
+    # dict(sim_group='caida-chi15-opp-dim-nsdi', trace_name='chi-15', **group_template_dim),
 
-    dict(sim_group='caida-sj12-haz-1F', **group_template_hazard),
-    dict(sim_group='caida-sj12-haz-MF', **group_template_hazard),
+    # dict(sim_group='caida-sj12-opp', **group_template),
+    # dict(sim_group='caida-sj12-opp-dim-nsdi', trace_name='sj-12', **group_template_dim),
 
-    dict(sim_group='mawi15-haz-1F', **group_template_hazard),
-    dict(sim_group='mawi15-haz-MF', **group_template_hazard),
+    # dict(sim_group='mawi15-opp', **group_template),
+    dict(sim_group='mawi15-opp-dim-nsdi', trace_name='mawi-15', **group_template_dim),
 
-    dict(sim_group='imc1-haz-1F', **group_template_hazard),
-    dict(sim_group='imc1-haz-MF', **group_template_hazard),
+    # dict(sim_group='imc1-opp', **group_template),
+    dict(sim_group='imc1-opp-dim-nsdi', trace_name='imc1', **group_template_dim),
 
-    dict(sim_group='imc2-haz-1F', **group_template_hazard),
-    dict(sim_group='imc2-haz-MF', **group_template_hazard),
+    # dict(sim_group='imc2-opp', **group_template),
+    dict(sim_group='imc2-opp-dim-nsdi', trace_name='imc2', **group_template_dim),
 
-    dict(sim_group='fb-haz-1F', **group_template_hazard),
-
-    dict(sim_group='caida-chi15-opp', **group_template),
-    dict(sim_group='caida-chi15-opp-dim', trace_name='chi-15', **group_template_dim),
-
-    dict(sim_group='caida-sj12-opp', **group_template),
-    dict(sim_group='caida-sj12-opp-dim', trace_name='sj-12', **group_template_dim),
-
-    dict(sim_group='mawi15-opp', **group_template),
-    dict(sim_group='mawi15-opp-dim', trace_name='mawi-15', **group_template_dim),
-
-    dict(sim_group='imc1-opp', **group_template),
-    dict(sim_group='imc1-opp-dim', trace_name='imc1', **group_template_dim),
-
-    dict(sim_group='imc2-opp', **group_template),
-    dict(sim_group='imc2-opp-dim', trace_name='imc2', **group_template_dim),
-
-    dict(sim_group='fb-opp', **group_template),
-    dict(sim_group='fb-opp-dim', trace_name='fb-web', **group_template_dim),
+    # dict(sim_group='fb-opp', **group_template),
+    dict(sim_group='fb-opp-dim-nsdi', trace_name='fb-web', **group_template_dim),
 ]
 
 pickle_parsed_cache = dict()
@@ -604,7 +587,7 @@ def main(prefix):
     for conf in result_confs:
         if not prefix or conf['sim_group'].startswith(prefix):
             parse_result_to_file(conf)
-            if conf['sim_group'].endswith('-dim'):
+            if conf['sim_group'].endswith('-dim-nsdi'):
                 drop_confs.append(conf)
     for drop_tolerance in [0, 0.05, 0.03, 0.01, 0.001, 0.0001, 0.00001]:
         parse_max_budget(drop_confs, drop_tolerance=drop_tolerance)
