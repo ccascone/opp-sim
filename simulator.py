@@ -110,7 +110,8 @@ class Simulator:
         self.sim_params = OrderedDict(trace=trace_label,
                                       sched=sched.__name__, N=N, Q=Q, W=W,
                                       key=key.__name__, hash=hashf.__name__,
-                                      read_chunk=read_chunk, util=line_rate_util)
+                                      read_chunk=read_chunk, util=line_rate_util,
+                                      report_seconds=report_seconds)
 
         # To avoid redoing old sims
         if quelen > 0:

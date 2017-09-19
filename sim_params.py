@@ -37,7 +37,7 @@ hazard_template_per_flow = dict(
     sched=HazardDetector, key=keys_ccr, N=range(1, 31), Q=0, W=0, hashf=hash_crc16, read_chunk=80, clock_freq=0)
 
 thrpt_template = dict(
-    sched=OPPScheduler, key=keys_ccr, N=range(1, 31), Q=[1, 4, 8, 16], W=[16], hashf=hash_crc16, read_chunk=80,
+    sched=OPPScheduler, key=keys_ccr, N=range(1, 31), Q=[1, 4, 8, 16], W=[2^4, 2^16], hashf=hash_crc16, read_chunk=80,
     clock_freq=0)#, thrpt_tolerance=0.8)
 
 thrpt_template_1F = dict(
@@ -46,7 +46,7 @@ thrpt_template_1F = dict(
 
 base_template = dict(
     sched=OPPScheduler, N=[4, 3], quelen=[5, 10, 100],
-    hashf=hash_crc16, read_chunk=64, report_seconds=10, line_rate_util=1)
+    hashf=hash_crc16, read_chunk=64, report_seconds=[10], line_rate_util=[1, 0.99, 0.95, 0.90])
 
 dim_template = dict(key=keys_ccr, Q=[1, 2, 4], W=[16], **base_template)#, drop_tolerance=0.02)
 
