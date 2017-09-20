@@ -28,7 +28,7 @@ keys_dim = [key_proto_sport, key_5tuple]
 keys_xx = [key_5tuple, key_ipsrc_ipdst, key_ipsrc, key_ipdst, key_ipsrc8, key_ipsrc16, key_ipsrc24, key_ipdst8,
            key_ipdst16, key_ipdst24, key_const]
 keys_ccr = [key_const, key_5tuple, key_ipdst, key_ipdst16, key_ipsrc_ipdst]
-
+keys_nsdi = [key_5tuple, key_ipsrc, key_ipsrc_ipdst]
 # keys_ccr = [key_5tuple, key_ipdst, key_ipdst16, key_const]
 
 hazard_template = dict(
@@ -45,10 +45,10 @@ thrpt_template_1F = dict(
     #,thrpt_tolerance=0.8)
 
 base_template = dict(
-    sched=OPPScheduler, N=[4, 3], quelen=[5, 10, 100],
-    hashf=hash_crc16, read_chunk=64, report_seconds=[10], line_rate_util=[1, 0.99, 0.95, 0.90])
+    sched=OPPScheduler, N=[3], quelen=[10],
+    hashf=hash_crc16, read_chunk=64, report_seconds=[10], line_rate_util=[1, 0.95], max_samples=6)
 
-dim_template = dict(key=keys_ccr, Q=[1, 2, 4], W=[16], **base_template)#, drop_tolerance=0.02)
+dim_template = dict(key=keys_nsdi, Q=[1, 4], W=[2^16], **base_template)#, drop_tolerance=0.02)
 
 dim_template_1F = dict(key=key_const, Q=1, W=1, **base_template)
 
@@ -75,7 +75,7 @@ sim_groups = {
     # OPP
 
     # "caida-chi15-opp": dict(trace=caida_chi15_traces, **thrpt_template),
-    # "caida-chi15-opp-dim-nsdi": dict(trace=caida_chi15_traces, **dim_template),
+    "caida-chi15-opp-dim-nsdi": dict(trace=caida_chi15_traces, **dim_template),
 
     # "caida-sj12-opp": dict(trace=caida_sj12_traces, **thrpt_template),
     # "caida-sj12-opp-dim-nsdi": dict(trace=caida_sj12_traces, **dim_template),
