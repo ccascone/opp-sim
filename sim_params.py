@@ -48,7 +48,7 @@ base_template = dict(
     sched=OPPScheduler, N=[3], quelen=[10],
     hashf=hash_crc16, read_chunk=64, report_seconds=[10], line_rate_util=[1, 0.95], max_samples=6)
 
-dim_template = dict(key=keys_nsdi, Q=[1, 4], W=[2^16], **base_template)#, drop_tolerance=0.02)
+dim_template = dict(key=keys_nsdi, Q=[1, 4], W=[2**16], **base_template)#, drop_tolerance=0.02)
 
 dim_template_1F = dict(key=key_const, Q=1, W=1, **base_template)
 
