@@ -115,7 +115,8 @@ def caida_ts(params):
 
 p_filter = dict(
     param_filter=dict(
-        key=['key_5tuple', 'key_ipdst', 'key_ipdst16', 'key_const']
+        # key=['key_5tuple', 'key_ipdst', 'key_ipdst16', 'key_const'],
+        W=[2**16]
     )
 )
 
@@ -155,17 +156,17 @@ group_template_dim = dict(
         'sched_queue_max_99th': max,
         'sched_queue_sum_99th': max,
     },
-    x_param='N',
-    z_param=('quelen', 'Q', 'W', 'util'),
+    x_param='util',
+    z_param=('report_seconds', 'Q', 'quelen', 'W', 'N'),
     line_param='key',
-    subdir_param=('util'),
+    subdir_params=('report_seconds', 'Q', 'quelen', 'W', 'N'),
     # style='linespoints',
     meta_samples={'cycle_util': [avg]},
     **p_filter)
 
 result_confs = [
     # dict(sim_group='caida-chi15-opp', **group_template),
-    # dict(sim_group='caida-chi15-opp-dim-nsdi', trace_name='chi-15', **group_template_dim),
+    dict(sim_group='caida-chi15-opp-dim-nsdi', trace_name='chi-15', **group_template_dim),
 
     # dict(sim_group='caida-sj12-opp', **group_template),
     # dict(sim_group='caida-sj12-opp-dim-nsdi', trace_name='sj-12', **group_template_dim),
@@ -215,10 +216,14 @@ def do_pickle_parse(conf):
         this_sim_samples = results['samples']
 
         if 'param_filter' in conf:
+            do_filter_out = False
             for param_key, param_values in conf['param_filter'].items():
                 if param_key in this_sim_params and this_sim_params[param_key] not in param_values:
                     filtered_count += 1
+                    do_filter_out = True
                     continue
+            if do_filter_out:
+                continue
 
         line_name = this_sim_params[conf['line_param']]
         # this_sim_y_values = this_sim_samples[conf['y_sample']]
@@ -404,15 +409,15 @@ def parse_result_to_file(conf):
     else:
         meta_samples = dict()
 
-    subdir_param_name = None
-    subdir_param_idx = None
+    subdir_param_names = []
+    subdir_param_idxs = []
 
     z_param = conf['z_param']
     if isinstance(z_param, (tuple, list)):
         z_label = '-'.join(z_param)
         try:
-            subdir_param_name = conf['subdir_param']
-            subdir_param_idx = z_param.index(conf['subdir_param'])
+            subdir_param_names = conf['subdir_params']
+            subdir_param_idxs = [z_param.index(p) for p in subdir_param_names]
         except KeyError:
             pass
     else:
@@ -451,8 +456,10 @@ def parse_result_to_file(conf):
 
                 meta_values = {k: [] for k in meta_samples.keys()}
 
-                if subdir_param_name:
-                    file_dest_dir = sim_dest_dir + '/%s_%s' % (subdir_param_name, z[subdir_param_idx])
+                if len(subdir_param_names) > 0:
+                    dirz = ['%s_%s' % (subdir_param_names[i], z[subdir_param_idxs[i]])
+                            for i in range(len(subdir_param_idxs))]
+                    file_dest_dir = sim_dest_dir + '/' + '/'.join(dirz)
                 else:
                     file_dest_dir = sim_dest_dir
 
@@ -589,8 +596,8 @@ def main(prefix):
             parse_result_to_file(conf)
             if conf['sim_group'].endswith('-dim-nsdi'):
                 drop_confs.append(conf)
-    for drop_tolerance in [0, 0.05, 0.03, 0.01, 0.001, 0.0001, 0.00001]:
-        parse_max_budget(drop_confs, drop_tolerance=drop_tolerance)
+    # for drop_tolerance in [0, 0.05, 0.03, 0.01, 0.001, 0.0001, 0.00001]:
+        # parse_max_budget(drop_confs, drop_tolerance=drop_tolerance)
 
 
 if __name__ == '__main__':
