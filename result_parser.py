@@ -148,7 +148,7 @@ group_template = dict(
     meta_samples={'cycle_util': [avg]},
     **p_filter)
 
-group_template_dim = dict(
+group_template_dim_dyn_clock = dict(
     y_sample={
         'sched_thrpt': min,
         'sched_drop_fract': perc_99th,
@@ -164,12 +164,31 @@ group_template_dim = dict(
     meta_samples={'cycle_util': [avg]},
     **p_filter)
 
+
+group_template_dim_wc = dict(
+    y_sample={
+        'sched_thrpt': min,
+        'sched_drop_fract': perc_99th,
+        'sched_latency_99th': max,
+        'sched_queue_max_99th': max,
+        'sched_queue_sum_99th': max,
+    },
+    x_param='N',
+    z_param=('Q', 'quelen', 'W'),
+    line_param='key',
+    subdir_params=('Q', 'quelen', 'W'),
+    # style='linespoints',
+    meta_samples={'cycle_util': [avg]},
+    **p_filter)
+
+group_template_dim = group_template_dim_wc
+
 result_confs = [
     # dict(sim_group='caida-chi15-opp', **group_template),
     dict(sim_group='caida-chi15-opp-dim-nsdi', trace_name='chi-15', **group_template_dim),
 
     # dict(sim_group='caida-sj12-opp', **group_template),
-    # dict(sim_group='caida-sj12-opp-dim-nsdi', trace_name='sj-12', **group_template_dim),
+    dict(sim_group='caida-sj12-opp-dim-nsdi', trace_name='sj-12', **group_template_dim),
 
     # dict(sim_group='mawi15-opp', **group_template),
     dict(sim_group='mawi15-opp-dim-nsdi', trace_name='mawi-15', **group_template_dim),
