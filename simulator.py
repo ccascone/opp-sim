@@ -308,7 +308,8 @@ class Simulator:
                     report_queueing_delay += sim_time - pkt_relative_time
 
             # Packet size multiplier
-            # pkt.iplen = transform_pkt_size(pkt.iplen, self.mlen)
+            if self.mlen < 1:
+                pkt.iplen = max(self.read_chunk, pkt.iplen * self.mlen)
 
             if 0 < self.read_chunk < pkt.iplen:
                 # Need more than 1 clock cycle to read the packet
@@ -500,3 +501,4 @@ if __name__ == '__main__':
     #                 sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
     #                 clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)
     sim.run(debug=True)
+
