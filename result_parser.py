@@ -157,9 +157,9 @@ group_template_dim_dyn_clock = dict(
         'sched_queue_sum_99th': max,
     },
     x_param='util',
-    z_param=('report_seconds', 'Q', 'quelen', 'W', 'N'),
+    z_param=('report_seconds', 'Q', 'quelen', 'W', 'N', 'mlen'),
     line_param='key',
-    subdir_params=('report_seconds', 'Q', 'quelen', 'W', 'N'),
+    subdir_params=('report_seconds', 'Q', 'quelen', 'W', 'N', 'mlen'),
     # style='linespoints',
     meta_samples={'cycle_util': [avg]},
     **p_filter)
@@ -167,16 +167,16 @@ group_template_dim_dyn_clock = dict(
 
 group_template_dim_wc = dict(
     y_sample={
-        'sched_thrpt': min,
+        'sched_thrpt': [min, max, median],
         'sched_drop_fract': perc_99th,
-        'sched_latency_99th': max,
+        'sched_latency_99th': [min, max, median],
         'sched_queue_max_99th': max,
         'sched_queue_sum_99th': max,
     },
-    x_param='N',
-    z_param=('Q', 'quelen', 'W'),
+    x_param='mlen',
+    z_param=('Q', 'quelen', 'W', 'N'),
     line_param='key',
-    subdir_params=('Q', 'quelen', 'W'),
+    subdir_params=('Q', 'quelen', 'W', 'N'),
     # style='linespoints',
     meta_samples={'cycle_util': [avg]},
     **p_filter)
