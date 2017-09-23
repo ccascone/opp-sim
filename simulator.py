@@ -308,7 +308,8 @@ class Simulator:
                     report_queueing_delay += sim_time - pkt_relative_time
 
             # Packet size multiplier
-            # pkt.iplen = transform_pkt_size(pkt.iplen, self.mlen)
+            if self.mlen < 1:
+                pkt.iplen = max(self.read_chunk, pkt.iplen * self.mlen)
 
             if 0 < self.read_chunk < pkt.iplen:
                 # Need more than 1 clock cycle to read the packet
