@@ -11,7 +11,7 @@ import hashkeys
 import misc
 import scheduler
 from sim_params import caida_chi15_traces, imc1_traces
-from simpacket import SimPacket
+from simpacket import SimPacket, DummyPacket
 
 lock = Lock()
 
@@ -78,7 +78,7 @@ class Simulator:
             W = Q
 
         # type: (basestring, int, int, int, function, function, int, int, int) -> None
-        trace_label = misc.get_trace_label(self.trace)
+        trace_label = misc.get_trace_label(self.trace) if self.trace is not None else "none"
 
         self.sim_params = OrderedDict(trace=trace_label,
                                       sched=sched.__name__, N=N, Q=Q, W=W,
@@ -95,7 +95,7 @@ class Simulator:
         self.sim_params['drop_tolerance'] = drop_tolerance
         self.sim_params['thrpt_tolerance'] = thrpt_tolerance
 
-        trace_params = {'trace_' + k: v for k, v in self.trace.items()}
+        trace_params = {'trace_' + k: v for k, v in self.trace.items()} if self.trace is not None else {}
         self.sim_params = dict(self.sim_params)
         self.sim_params.update(trace_params)
 
@@ -201,40 +201,44 @@ class Simulator:
 
     def do_simulation(self):
 
-        fname_a, fname_b = misc.get_trace_fname(self.trace)
+        if self.trace is not None:
+            fname_a, fname_b = misc.get_trace_fname(self.trace)
 
-        if self.dumps is None:
-            self.dumps = {fname_a: '', fname_b: ''}
-            for fname in [fname_a, fname_b]:
-                if fname:
-                    if not os.path.isfile(fname):
-                        raise SimException("Not such trace file: %s" % fname_a)
-                    else:
-                        try:
-                            with open(fname, 'rb') as f:
-                                self._print('Reading %s...' % fname, False)
-                                self.dumps[fname] = f.read()
-                        except IOError:
-                            raise SimException("Unable to read trace file %s" % fname)
+            if self.dumps is None:
+                self.dumps = {fname_a: '', fname_b: ''}
+                for fname in [fname_a, fname_b]:
+                    if fname:
+                        if not os.path.isfile(fname):
+                            raise SimException("Not such trace file: %s" % fname_a)
+                        else:
+                            try:
+                                with open(fname, 'rb') as f:
+                                    self._print('Reading %s...' % fname, False)
+                                    self.dumps[fname] = f.read()
+                            except IOError:
+                                raise SimException("Unable to read trace file %s" % fname)
 
-        tot_pkt_a, rem_a = divmod(len(self.dumps[fname_a]), 32.0)
-        tot_pkt_b, rem_b = divmod(len(self.dumps[fname_b]), 32.0)
+            tot_pkt_a, rem_a = divmod(len(self.dumps[fname_a]), 32.0)
+            tot_pkt_b, rem_b = divmod(len(self.dumps[fname_b]), 32.0)
 
-        if (rem_a + rem_b) != 0:
-            raise SimException("Invalid byte count in file A or B (file size must be multiple of 32 bytes)")
+            if (rem_a + rem_b) != 0:
+                raise SimException("Invalid byte count in file A or B (file size must be multiple of 32 bytes)")
 
-        if self.line_rate > 0 and self.sim_util != 0:
-            self._print('Simulated line rate is %sbps' % misc.hnum(self.line_rate), False)
-            self._print('Evaluating traces bitrate...', False)
-            bitrate_a = misc.evaluate_bitrate(self.dumps[fname_a])
-            bitrate_b = misc.evaluate_bitrate(self.dumps[fname_b]) if len(self.dumps[fname_b]) else {'max': 0}
-            max_bitrate = bitrate_a['max'] + bitrate_b['max']
-            self.time_stretch_factor = max_bitrate / (self.line_rate * self.sim_util)
-            self._print('Trace max bitrate is %sbps, setting time stretch factor to %f...'
-                        % (misc.hnum(max_bitrate), self.time_stretch_factor), False)
-            self.report_interval *= self.time_stretch_factor
+            if self.line_rate > 0 and self.sim_util != 0:
+                self._print('Simulated line rate is %sbps' % misc.hnum(self.line_rate), False)
+                self._print('Evaluating traces bitrate...', False)
+                bitrate_a = misc.evaluate_bitrate(self.dumps[fname_a])
+                bitrate_b = misc.evaluate_bitrate(self.dumps[fname_b]) if len(self.dumps[fname_b]) else {'max': 0}
+                max_bitrate = bitrate_a['max'] + bitrate_b['max']
+                self.time_stretch_factor = max_bitrate / (self.line_rate * self.sim_util)
+                self._print('Trace max bitrate is %sbps, setting time stretch factor to %f...'
+                            % (misc.hnum(max_bitrate), self.time_stretch_factor), False)
+                self.report_interval *= self.time_stretch_factor
 
-        tot_pkts = int(tot_pkt_a + tot_pkt_b)
+            tot_pkts = int(tot_pkt_a + tot_pkt_b)
+        else:
+            self._print('Using dummy worst-case trace (1 flow - all packets minimum size)...', False)
+            tot_pkts = self.max_samples * MAX_PKT_REPORT_COUNT
 
         if tot_pkts < MAX_PKT_REPORT_COUNT:
             raise SimException('Not enough packets in this trace (found %s, required %s)'
@@ -268,24 +272,27 @@ class Simulator:
 
         while self.running:
 
-            # Extract packet from direction A
-            if not pkt_a and idx_a < tot_pkt_a:
-                pkt_a = SimPacket(self.dumps[fname_a], idx_a * 32)
-                idx_a += 1
-            # Extract packet from direction B
-            if not pkt_b and idx_b < tot_pkt_b:
-                pkt_b = SimPacket(self.dumps[fname_b], idx_b * 32)
-                idx_b += 1
-            # Choose between A and B.
-            if pkt_a and (not pkt_b or pkt_a.ts_nano <= pkt_b.ts_nano):
-                pkt = pkt_a
-                pkt_a = None
-            elif pkt_b and (not pkt_a or pkt_b.ts_nano <= pkt_a.ts_nano):
-                pkt = pkt_b
-                pkt_b = None
+            if self.trace is not None:
+                # Extract packet from direction A
+                if not pkt_a and idx_a < tot_pkt_a:
+                    pkt_a = SimPacket(self.dumps[fname_a], idx_a * 32)
+                    idx_a += 1
+                # Extract packet from direction B
+                if not pkt_b and idx_b < tot_pkt_b:
+                    pkt_b = SimPacket(self.dumps[fname_b], idx_b * 32)
+                    idx_b += 1
+                # Choose between A and B.
+                if pkt_a and (not pkt_b or pkt_a.ts_nano <= pkt_b.ts_nano):
+                    pkt = pkt_a
+                    pkt_a = None
+                elif pkt_b and (not pkt_a or pkt_b.ts_nano <= pkt_a.ts_nano):
+                    pkt = pkt_b
+                    pkt_b = None
+                else:
+                    # No more packets to process.
+                    return
             else:
-                # No more packets to process.
-                return
+                pkt = DummyPacket("X", pkt_count, self.read_chunk)
 
             # Scale time if required.
             if self.time_stretch_factor != 0:
@@ -351,9 +358,13 @@ class Simulator:
                 sim_eta = (tot_pkts - pkt_count) / sim_pkt_rate  # seconds
                 sim_avg_queue_delay = report_queueing_delay / float(report_pkt_count)
 
-                trfc_delta_time = pkt.ts_nano - report_trfc_last_ts
-                trfc_bitrate = (report_trfc_byte_count * 8) / trfc_delta_time
-                trfc_pkt_rate = report_pkt_count / trfc_delta_time
+                if self.trace is not None:
+                    trfc_delta_time = pkt.ts_nano - report_trfc_last_ts
+                    trfc_bitrate = (report_trfc_byte_count * 8) / trfc_delta_time
+                    trfc_pkt_rate = report_pkt_count / trfc_delta_time
+                else:
+                    trfc_bitrate = 0
+                    trfc_pkt_rate = 0
 
                 work_cycles = report_sched_cycles[scheduler.WORK] + report_sched_cycles[scheduler.HAZARD]
 
@@ -428,7 +439,7 @@ class Simulator:
                     return
 
                 # Skip REPORT_STEP packets
-                if REPORT_STEP > 0:
+                if REPORT_STEP > 0 and self.trace is not None:
                     relative_step = REPORT_STEP / tot_pkts
 
                     idx_a += int(tot_pkt_a * relative_step)
@@ -490,13 +501,13 @@ class Simulator:
 if __name__ == '__main__':
     # sim_parameters = params.gen_params()
     #caida_trace = caida_chi15_traces[0]
-    fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
-    mawi_trace = dict(provider='mawi', name='201003081400')
-    imc1_trace = imc1_traces[0]
-    sim = Simulator(imc1_trace)
-    sim.provision(N=20, Q=8, W=16,
+    # fb_trace = dict(provider='fb', cluster='A', rack='0a2a1f0d')
+    # mawi_trace = dict(provider='mawi', name='201003081400')
+    # imc1_trace = imc1_traces[0]
+    sim = Simulator(None)
+    sim.provision(N=3, Q=1, W=1,
                   sched=scheduler.OPPScheduler, hashf=hashkeys.hash_crc16, key=hashkeys.key_5tuple,
-                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1, quelen=100, thrpt_tolerance=0.95)
+                  clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1, quelen=10, thrpt_tolerance=0)
     # sim = Simulator(trace_provider='fb', trace_cluster='B', trace_rack='bace22a7', N=3, Q=1, W=1,
     #                 sched=scheduler.OPPScheduler, hashf=params.hash_crc16, key=params.key_const,
     #                 clock_freq=0, read_chunk=80, line_rate_util=1, mlen=1)

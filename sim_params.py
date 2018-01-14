@@ -54,42 +54,45 @@ dim_template_1F = dict(
 sim_groups = {
     # Hazard Detector
 
-    "caida-chi15-haz-1F": dict(trace=caida_chi15_traces, **hazard_template),
-    "caida-chi15-haz-MF": dict(trace=caida_chi15_traces, **hazard_template_per_flow),
-
-    "caida-sj12-haz-1F": dict(trace=caida_sj12_traces, **hazard_template),
-    "caida-sj12-haz-MF": dict(trace=caida_sj12_traces, **hazard_template_per_flow),
-
-    "mawi15-haz-1F": dict(trace=mawi15_traces, **hazard_template),
-    "mawi15-haz-MF": dict(trace=mawi15_traces, **hazard_template_per_flow),
-
-    "imc1-haz-1F": dict(trace=imc1_traces, **hazard_template),
-    "imc1-haz-MF": dict(trace=imc1_traces, **hazard_template_per_flow),
-
-    "imc2-haz-1F": dict(trace=imc2_traces, **hazard_template),
-    "imc2-haz-MF": dict(trace=imc2_traces, **hazard_template_per_flow),
-
-    "fb-haz-1F": dict(trace=fb_traces, **hazard_template),
+    # "caida-chi15-haz-1F": dict(trace=caida_chi15_traces, **hazard_template),
+    # "caida-chi15-haz-MF": dict(trace=caida_chi15_traces, **hazard_template_per_flow),
+    #
+    # "caida-sj12-haz-1F": dict(trace=caida_sj12_traces, **hazard_template),
+    # "caida-sj12-haz-MF": dict(trace=caida_sj12_traces, **hazard_template_per_flow),
+    #
+    # "mawi15-haz-1F": dict(trace=mawi15_traces, **hazard_template),
+    # "mawi15-haz-MF": dict(trace=mawi15_traces, **hazard_template_per_flow),
+    #
+    # "imc1-haz-1F": dict(trace=imc1_traces, **hazard_template),
+    # "imc1-haz-MF": dict(trace=imc1_traces, **hazard_template_per_flow),
+    #
+    # "imc2-haz-1F": dict(trace=imc2_traces, **hazard_template),
+    # "imc2-haz-MF": dict(trace=imc2_traces, **hazard_template_per_flow),
+    #
+    # "fb-haz-1F": dict(trace=fb_traces, **hazard_template),
 
     # OPP
 
-    "caida-chi15-opp": dict(trace=caida_chi15_traces, **thrpt_template),
-    "caida-chi15-opp-dim": dict(trace=caida_chi15_traces, **dim_template),
+    # "caida-chi15-opp": dict(trace=caida_chi15_traces, **thrpt_template),
+    # "caida-chi15-opp-dim": dict(trace=caida_chi15_traces, **dim_template),
+    #
+    # "caida-sj12-opp": dict(trace=caida_sj12_traces, **thrpt_template),
+    # "caida-sj12-opp-dim": dict(trace=caida_sj12_traces, **dim_template),
+    #
+    # "fb-opp": dict(trace=fb_traces, **thrpt_template_1F),
+    # "fb-opp-dim": dict(trace=fb_traces, **dim_template_1F),
+    #
+    # "mawi15-opp": dict(trace=mawi15_traces, **thrpt_template),
+    # "mawi15-opp-dim": dict(trace=mawi15_traces, **dim_template),
+    #
+    # "imc1-opp": dict(trace=imc1_traces, **thrpt_template),
+    # "imc1-opp-dim": dict(trace=imc1_traces, **dim_template),
+    #
+    # "imc2-opp": dict(trace=imc2_traces, **thrpt_template),
+    # "imc2-opp-dim": dict(trace=imc2_traces, **dim_template)
 
-    "caida-sj12-opp": dict(trace=caida_sj12_traces, **thrpt_template),
-    "caida-sj12-opp-dim": dict(trace=caida_sj12_traces, **dim_template),
-
-    "fb-opp": dict(trace=fb_traces, **thrpt_template_1F),
-    "fb-opp-dim": dict(trace=fb_traces, **dim_template_1F),
-
-    "mawi15-opp": dict(trace=mawi15_traces, **thrpt_template),
-    "mawi15-opp-dim": dict(trace=mawi15_traces, **dim_template),
-
-    "imc1-opp": dict(trace=imc1_traces, **thrpt_template),
-    "imc1-opp-dim": dict(trace=imc1_traces, **dim_template),
-
-    "imc2-opp": dict(trace=imc2_traces, **thrpt_template),
-    "imc2-opp-dim": dict(trace=imc2_traces, **dim_template)
+    "wc-opp-dim": dict(trace=None, sched=OPPScheduler, key=[key_const], N=range(1, 31), Q=[1], W=[1], quelen=[10],
+                       hashf=hash_crc16, read_chunk=80, clock_freq=0, max_samples=1)
 }
 
 noexp = ['trace']

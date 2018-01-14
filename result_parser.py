@@ -164,40 +164,42 @@ group_template_dim = dict(
     **p_filter)
 
 result_confs = [
-    dict(sim_group='caida-chi15-haz-1F', **group_template_hazard),
-    dict(sim_group='caida-chi15-haz-MF', **group_template_hazard),
+    # dict(sim_group='caida-chi15-haz-1F', **group_template_hazard),
+    # dict(sim_group='caida-chi15-haz-MF', **group_template_hazard),
+    #
+    # dict(sim_group='caida-sj12-haz-1F', **group_template_hazard),
+    # dict(sim_group='caida-sj12-haz-MF', **group_template_hazard),
+    #
+    # dict(sim_group='mawi15-haz-1F', **group_template_hazard),
+    # dict(sim_group='mawi15-haz-MF', **group_template_hazard),
+    #
+    # dict(sim_group='imc1-haz-1F', **group_template_hazard),
+    # dict(sim_group='imc1-haz-MF', **group_template_hazard),
+    #
+    # dict(sim_group='imc2-haz-1F', **group_template_hazard),
+    # dict(sim_group='imc2-haz-MF', **group_template_hazard),
+    #
+    # dict(sim_group='fb-haz-1F', **group_template_hazard),
+    #
+    # dict(sim_group='caida-chi15-opp', **group_template),
+    # dict(sim_group='caida-chi15-opp-dim', trace_name='chi-15', **group_template_dim),
+    #
+    # dict(sim_group='caida-sj12-opp', **group_template),
+    # dict(sim_group='caida-sj12-opp-dim', trace_name='sj-12', **group_template_dim),
+    #
+    # dict(sim_group='mawi15-opp', **group_template),
+    # dict(sim_group='mawi15-opp-dim', trace_name='mawi-15', **group_template_dim),
+    #
+    # dict(sim_group='imc1-opp', **group_template),
+    # dict(sim_group='imc1-opp-dim', trace_name='imc1', **group_template_dim),
+    #
+    # dict(sim_group='imc2-opp', **group_template),
+    # dict(sim_group='imc2-opp-dim', trace_name='imc2', **group_template_dim),
+    #
+    # dict(sim_group='fb-opp', **group_template),
+    # dict(sim_group='fb-opp-dim', trace_name='fb-web', **group_template_dim),
 
-    dict(sim_group='caida-sj12-haz-1F', **group_template_hazard),
-    dict(sim_group='caida-sj12-haz-MF', **group_template_hazard),
-
-    dict(sim_group='mawi15-haz-1F', **group_template_hazard),
-    dict(sim_group='mawi15-haz-MF', **group_template_hazard),
-
-    dict(sim_group='imc1-haz-1F', **group_template_hazard),
-    dict(sim_group='imc1-haz-MF', **group_template_hazard),
-
-    dict(sim_group='imc2-haz-1F', **group_template_hazard),
-    dict(sim_group='imc2-haz-MF', **group_template_hazard),
-
-    dict(sim_group='fb-haz-1F', **group_template_hazard),
-
-    dict(sim_group='caida-chi15-opp', **group_template),
-    dict(sim_group='caida-chi15-opp-dim', trace_name='chi-15', **group_template_dim),
-
-    dict(sim_group='caida-sj12-opp', **group_template),
-    dict(sim_group='caida-sj12-opp-dim', trace_name='sj-12', **group_template_dim),
-
-    dict(sim_group='mawi15-opp', **group_template),
-    dict(sim_group='mawi15-opp-dim', trace_name='mawi-15', **group_template_dim),
-
-    dict(sim_group='imc1-opp', **group_template),
-    dict(sim_group='imc1-opp-dim', trace_name='imc1', **group_template_dim),
-
-    dict(sim_group='imc2-opp', **group_template),
-    dict(sim_group='imc2-opp-dim', trace_name='imc2', **group_template_dim),
-
-    dict(sim_group='fb-opp', **group_template),
-    dict(sim_group='fb-opp-dim', trace_name='fb-web', **group_template_dim),
+    dict(sim_group='wc-opp-dim', trace_name='wc', **group_template_dim),
 ]
 
 pickle_parsed_cache = dict()

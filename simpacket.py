@@ -56,3 +56,46 @@ class SimPacket():
     def dport(self):
         # type: () -> string
         return self.buf_slice(12, 2)
+
+
+class DummyPacket():
+    def __init__(self, direct, ts_nano, iplen):
+        self.direct, self.ts_nano, self.iplen = direct, ts_nano, iplen
+        self.lookup_key = None
+        self.update_key = None
+
+    def buf_slice(self, start, length):
+        return "0"
+
+    def ipsrc(self):
+        return "0"
+
+    def ipsrc8(self):
+        return "0"
+
+    def ipsrc16(self):
+        return "0"
+
+    def ipsrc24(self):
+        return "0"
+
+    def ipdst(self):
+        return "0"
+
+    def ipdst8(self):
+        return "0"
+
+    def ipdst16(self):
+        return "0"
+
+    def ipdst24(self):
+        return "0"
+
+    def proto(self):
+        return "0"
+
+    def sport(self):
+        return "0"
+
+    def dport(self):
+        return "0"

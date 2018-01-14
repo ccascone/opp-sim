@@ -44,11 +44,11 @@ def check_need_to_run(p_list):
 def worker(ppp):
     p_list, tlist, num_sim = ppp
 
-    trace_set = set(HashableDict(p['trace']) for p in p_list)
-    assert len(trace_set) == 1
-    trace = trace_set.pop()
+    # trace_set = set(HashableDict(p['trace']) for p in p_list)
+    # assert len(trace_set) == 1
+    trace = p_list[0]['trace']
 
-    trace_label = get_trace_label(trace)
+    trace_label = get_trace_label(trace) if trace is not None else "none"
     local_num_sim = len(p_list)
 
     print "Starting worker on trace file %s (%s simulations)..." % (trace_label, len(p_list))
@@ -107,7 +107,7 @@ def main():
 
     trace_params_dict = dict()
     for params in param_list:
-        trace_key = HashableDict(params['trace'])
+        trace_key = HashableDict(params['trace']) if params['trace'] is not None else HashableDict({0: 0})
         if trace_key not in trace_params_dict:
             trace_params_dict[trace_key] = list()
         trace_params_dict[trace_key].append(params)
